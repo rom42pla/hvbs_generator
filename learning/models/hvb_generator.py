@@ -144,9 +144,9 @@ class HvbGenerator(pl.LightningModule):
             pad_embedding = self.tokens_embedder(torch.as_tensor([self.vocabulary["[PAD]"]],
                                                                  device=self.device))
             tokens_embeddings_shifted = torch.cat([tokens_embeddings[:, 0:1],
-                                                  tokens_embeddings[:, 2:],
-                                                  pad_embedding.repeat(tokens_embeddings.shape[0], 1, 1)],
-                                                 dim=1)
+                                                   tokens_embeddings[:, 2:],
+                                                   pad_embedding.repeat(tokens_embeddings.shape[0], 1, 1)],
+                                                  dim=1)
             tokens_decoded = self.decoder(x_encoder=tokens_encoded, x_decoder=tokens_embeddings_shifted)
         # print("names_decoded", names_decoded.shape)
         with profiler.record_function("classification"):
@@ -168,10 +168,15 @@ class HvbGenerator(pl.LightningModule):
                                target=einops.rearrange(gt_tokens, "b s -> (b s)"),
                                label_smoothing=0.1,
                                ignore_index=self.vocabulary[self.pad_token])
+        f1 = torchmetrics.functional.f1_score(preds=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
+                                              target=einops.rearrange(gt_tokens, "b s -> (b s)"),
+                                              ignore_index=self.vocabulary[self.pad_token],
+                                              average="micro")
+        del pred_tokens, gt_tokens
+        gc.collect()
         return {
             "loss": loss,
-            "gt_tokens": gt_tokens.detach().cpu(),
-            "pred_tokens": pred_tokens.detach().cpu(),
+            "f1": f1,
         }
 
     def validation_step(self, batch, batch_idx):
@@ -187,10 +192,15 @@ class HvbGenerator(pl.LightningModule):
         loss = F.cross_entropy(input=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
                                target=einops.rearrange(gt_tokens, "b s -> (b s)"),
                                ignore_index=self.vocabulary[self.pad_token])
+        f1 = torchmetrics.functional.f1_score(preds=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
+                                              target=einops.rearrange(gt_tokens, "b s -> (b s)"),
+                                              ignore_index=self.vocabulary[self.pad_token],
+                                              average="micro")
+        del pred_tokens, gt_tokens
+        gc.collect()
         return {
             "loss": loss,
-            "gt_tokens": gt_tokens.detach().cpu(),
-            "pred_tokens": pred_tokens.detach().cpu(),
+            "f1": f1,
         }
 
     def training_epoch_end(self, outputs: List[Dict[str, torch.Tensor]]):
@@ -207,16 +217,13 @@ class HvbGenerator(pl.LightningModule):
         # name of the current phase
         phase: str = "train" if self.training is True else "val"
         # loss
-        losses: torch.Tensor = torch.stack([e["loss"].detach() for e in outputs])
+        losses: torch.Tensor = torch.stack([e["loss"].detach().cpu() for e in outputs])
         self.log(f"loss_{phase}", losses.mean(), prog_bar=True if phase == "val" else False)
         # f1
-        gt_tokens, pred_tokens = torch.cat([e["gt_tokens"].detach() for e in outputs], dim=0), \
-                                 torch.cat([e["pred_tokens"].detach() for e in outputs], dim=0)
-        f1 = torchmetrics.functional.f1_score(preds=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
-                                              target=einops.rearrange(gt_tokens, "b s -> (b s)"),
-                                              ignore_index=self.vocabulary[self.pad_token],
-                                              average="micro")
-        self.log(f"f1_{phase}", f1, prog_bar=True)
+        f1s: torch.Tensor = torch.stack([e["f1"].detach().cpu() for e in outputs])
+        self.log(f"f1_{f1s}", f1s.mean(), prog_bar=True)
+        del losses, f1s
+        gc.collect()
 
     def optimizer_zero_grad(self, epoch, batch_idx, optimizer, optimizer_idx):
         optimizer.zero_grad(set_to_none=True)
