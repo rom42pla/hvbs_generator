@@ -74,6 +74,8 @@ class HvbGenerator(pl.LightningModule):
             for i, t in enumerate([self.start_token, self.end_token, self.pad_token, self.unk_token, self.mask_token])
         })
         self.vocabulary_reversed = {v: k for k, v in self.vocabulary.items()}
+        self.classification_bindings = {k: i for i, k in enumerate([k for k in self.vocabulary.keys()
+                                                                    if k not in {self.start_token, self.mask_token}])}
         assert isinstance(max_sentence_length, int) and max_sentence_length >= 1
         self.max_sentence_length = max_sentence_length
         self.tokenizer = self.get_tokenizer()
@@ -128,7 +130,7 @@ class HvbGenerator(pl.LightningModule):
 
         self.classification = nn.Sequential(OrderedDict([
             ("linear", nn.Linear(in_features=self.embeddings_dim,
-                                 out_features=len(self.vocabulary))),
+                                 out_features=len(self.classification_bindings))),
         ]))
 
         self.float()
@@ -140,6 +142,7 @@ class HvbGenerator(pl.LightningModule):
 
     def forward(self,
                 tokens: torch.Tensor):
+        tokens = tokens.clone()
         if tokens.device != self.device:
             tokens = tokens.to(self.device)
 
@@ -229,8 +232,12 @@ class HvbGenerator(pl.LightningModule):
         # computes the metrics
         gt_tokens = torch.cat([
             tokens[:, 1:],
-            torch.as_tensor([self.vocabulary["[PAD]"]], device=self.device).repeat(tokens.shape[0], 1)
+            torch.as_tensor([self.vocabulary[self.pad_token]], device=self.device).repeat(tokens.shape[0], 1)
         ], dim=-1)
+        for value in gt_tokens.unique():
+            value = value.detach().item()
+            classification_binding = self.classification_bindings[self.vocabulary_reversed[value]]
+            gt_tokens[gt_tokens == value] = classification_binding
         pred_tokens = einops.rearrange(pred_tokens, "b s l -> (b s) l")
         gt_tokens = einops.rearrange(gt_tokens, "b s -> (b s)")
         loss = F.cross_entropy(input=pred_tokens,
@@ -347,6 +354,10 @@ if __name__ == "__main__":
     tokens = dataset.get_used_tokens(tokenizer=tokenizer)
     vocabulary = {v: i for i, v in enumerate(tokens)}
     model = HvbGenerator(embeddings_dim=128, vocabulary=vocabulary,
+                         start_token=tokenizer.cls_token,
+                         end_token=tokenizer.sep_token,
+                         pad_token=tokenizer.pad_token,
+                         unk_token=tokenizer.unk_token,
                          num_encoders=2, num_decoders=2,
                          use_masking=True,
                          mask_perc_min=0.1, mask_perc_max=0.3,
@@ -354,9 +365,10 @@ if __name__ == "__main__":
     model.training = True
     print(model)
     with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:
-        dataloader = DataLoader(dataset, batch_size=64)
+        dataloader = DataLoader(dataset, batch_size=8)
         for b in dataloader:
             model.training_step(b, 0)
+            print(b)
             break
     print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=8))
 
