@@ -164,12 +164,14 @@ class HvbGenerator(pl.LightningModule):
             tokens[:, 1:],
             torch.as_tensor([self.vocabulary["[PAD]"]], device=self.device).repeat(tokens.shape[0], 1)
         ], dim=-1)
-        loss = F.cross_entropy(input=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
-                               target=einops.rearrange(gt_tokens, "b s -> (b s)"),
+        pred_tokens = einops.rearrange(pred_tokens, "b s l -> (b s) l")
+        gt_tokens = einops.rearrange(gt_tokens, "b s -> (b s)")
+        loss = F.cross_entropy(input=pred_tokens,
+                               target=gt_tokens,
                                label_smoothing=0.1,
                                ignore_index=self.vocabulary[self.pad_token])
-        f1 = torchmetrics.functional.f1_score(preds=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
-                                              target=einops.rearrange(gt_tokens, "b s -> (b s)"),
+        f1 = torchmetrics.functional.f1_score(preds=pred_tokens,
+                                              target=gt_tokens,
                                               ignore_index=self.vocabulary[self.pad_token],
                                               average="micro")
         del pred_tokens, gt_tokens
@@ -189,11 +191,14 @@ class HvbGenerator(pl.LightningModule):
             tokens[:, 1:],
             torch.as_tensor([self.vocabulary["[PAD]"]], device=self.device).repeat(tokens.shape[0], 1)
         ], dim=-1)
-        loss = F.cross_entropy(input=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
-                               target=einops.rearrange(gt_tokens, "b s -> (b s)"),
+        pred_tokens = einops.rearrange(pred_tokens, "b s l -> (b s) l")
+        gt_tokens = einops.rearrange(gt_tokens, "b s -> (b s)")
+        loss = F.cross_entropy(input=pred_tokens,
+                               target=gt_tokens,
+                               label_smoothing=0.1,
                                ignore_index=self.vocabulary[self.pad_token])
-        f1 = torchmetrics.functional.f1_score(preds=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
-                                              target=einops.rearrange(gt_tokens, "b s -> (b s)"),
+        f1 = torchmetrics.functional.f1_score(preds=pred_tokens,
+                                              target=gt_tokens,
                                               ignore_index=self.vocabulary[self.pad_token],
                                               average="micro")
         del pred_tokens, gt_tokens
@@ -273,8 +278,8 @@ class AddGaussianNoise(nn.Module):
 
 
 if __name__ == "__main__":
-    dataset = RPGObjectDataset(path=join("..", "..", "data", "oggetti_magici.csv"),
-                               max_length=32)
+    dataset = RPGObjectDataset(path=join("..", "datasets", "oggetti_magici.csv"),
+                               max_length=32, vocab_path=join("..", "datasets_classes", "vocab.txt"))
     model = HvbGenerator(embeddings_dim=128, vocabulary=dataset.tokenizer.get_vocab(),
                          num_encoders=1, num_decoders=1,
                          use_masking=True,
