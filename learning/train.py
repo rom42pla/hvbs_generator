@@ -28,9 +28,11 @@ set_global_seed(seed=args['seed'])
 
 # sets up the datasets
 squad_train = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-train.json"),
-                           vocab_path=join("learning", "datasets_classes", "vocab.txt"),)
+                           vocab_path=join("learning", "datasets_classes", "vocab.txt"),
+                           max_length=args['max_sentences_length'])
 squad_test = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-test.json"),
-                          vocab_path=join("learning", "datasets_classes", "vocab.txt"),)
+                          vocab_path=join("learning", "datasets_classes", "vocab.txt"),
+                          max_length=args['max_sentences_length'])
 logging.info(f"SQUAD dataset loaded")
 #
 # sets up the model

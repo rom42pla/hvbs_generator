@@ -21,6 +21,7 @@ from torch.utils.data import DataLoader
 from torchaudio import transforms
 
 from learning.datasets_classes.objects import RPGObjectDataset
+from learning.datasets_classes.squad import SQUADDataset
 from learning.models.modules import FouriEncoderBlock, FouriEncoder, FouriDecoder
 
 
@@ -280,15 +281,25 @@ class AddGaussianNoise(nn.Module):
 if __name__ == "__main__":
     dataset = RPGObjectDataset(path=join("..", "datasets", "oggetti_magici.csv"),
                                max_length=32, vocab_path=join("..", "datasets_classes", "vocab.txt"))
+    squad_train = SQUADDataset(path=join("..", "datasets", "SQuAD_it-train.json"),
+                               vocab_path=join("..", "datasets_classes", "vocab.txt"))
     model = HvbGenerator(embeddings_dim=128, vocabulary=dataset.tokenizer.get_vocab(),
-                         num_encoders=1, num_decoders=1,
+                         num_encoders=2, num_decoders=2,
                          use_masking=True,
                          mask_perc_min=0.1, mask_perc_max=0.3,
                          mix_fourier_with_tokens=True)
-    dataloader = DataLoader(dataset, batch_size=8)
     model.training = True
     print(model)
     with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:
+        dataloader = DataLoader(squad_train, batch_size=8)
+        for b in dataloader:
+            print(b["context"].shape)
+            exit()
+            model.training_step(b, 0)
+    print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=8))
+
+    with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:
+        dataloader = DataLoader(dataset, batch_size=64)
         model.training_step(next(iter(dataloader)), 0)
     print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=8))
     for _ in range(4):
