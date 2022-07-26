@@ -1,0 +1,10 @@
+{
+  "rings": {
+    "google_id": "1GZvQHVeUEqj6q3MCy7z7Gep8GLMvxjooZld3FiepWpg",
+    "sheets": ["materials", "filaments", "patterns", "gems"]
+  },
+  "rarities": {
+    "google_id": "11q8wzFPDn7o3Yerr1yLfai_yEO2AJ86ZklU-qdj4FMs",
+    "sheets": ["rarity"]
+  }
+}

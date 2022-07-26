@@ -1,0 +1,15 @@
+pandas
+fastapi
+uvicorn[standard]
+aiogram
+
+# learning
+numpy
+scipy
+torch
+functorch
+pytorch-lightning
+einops
+matplotlib
+seaborn
+rich
