@@ -304,7 +304,7 @@ class FouriDecoder(nn.Module):
             x_decoder = decoder_block(x_encoder=x_encoder, x_decoder=x_decoder)
         if self.add_positional_embeddings:
             x_decoder = x_decoder[:, 1:-1]
-        x_decoder = self.postprocessing(x_decoder)
+        # x_decoder = self.postprocessing(x_decoder)
 
         if not is_batched:
             x_decoder = einops.rearrange(x_decoder, "b s c -> (b s) c")
@@ -415,9 +415,10 @@ class LinearMultiheadAttention(nn.Module):
             for _ in range(self.num_heads)
         ])
         self.out_reshaper = nn.Sequential(
-            Rearrange("b h s d -> b s d h"),
-            nn.AdaptiveMaxPool2d(output_size=(self.embeddings_dim, 1)),
-            Rearrange("b s d h -> b s (d h)")
+            Rearrange("b h s d -> b s (d h)"),
+            # nn.AdaptiveMaxPool2d(output_size=(self.embeddings_dim, 1)),
+            nn.Linear(in_features=self.embeddings_dim * self.num_heads, out_features=self.embeddings_dim),
+            # Rearrange("b s d h -> b s (d h)")
         )
 
     def forward(self, q, k, v):
