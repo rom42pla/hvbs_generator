@@ -133,7 +133,8 @@ class HvbGenerator(pl.LightningModule):
             names_encoded = self.encoder(names_embeddings)
         # print("names_encoded", names_encoded.shape)
         with profiler.record_function("decoder"):
-            pad_embedding = self.tokens_embedder(torch.as_tensor([self.vocabulary["[PAD]"]]))
+            pad_embedding = self.tokens_embedder(torch.as_tensor([self.vocabulary["[PAD]"]],
+                                                                 device=self.device))
             names_embeddings_shifted = torch.cat([names_embeddings[:, 0:1],
                                                   names_embeddings[:, 2:],
                                                   pad_embedding.repeat(names_embeddings.shape[0], 1, 1)], dim=1)
@@ -154,7 +155,7 @@ class HvbGenerator(pl.LightningModule):
         pred_tokens = self(names)  # (b l d)
         gt_tokens = torch.cat([
             names[:, 1:],
-            torch.as_tensor([self.vocabulary["[PAD]"]]).repeat(names.shape[0], 1)
+            torch.as_tensor([self.vocabulary["[PAD]"]], device=self.device).repeat(names.shape[0], 1)
         ], dim=-1)
         loss = sum([F.cross_entropy(input=pred_tokens[:, i_token], target=gt_tokens[:, i_token])
                     for i_token in range(gt_tokens.shape[1])])
