@@ -27,6 +27,9 @@ from learning.models.modules import FouriEncoderBlock, FouriEncoder, FouriDecode
 class HvbGenerator(pl.LightningModule):
     def __init__(self,
                  vocabulary: Dict[str, int],
+                 start_token: str = "[CLS]",
+                 pad_token: str = "[PAD]",
+                 end_token: str = "[SEP]",
 
                  embeddings_dim: int = 512,
                  num_encoders: int = 1,
@@ -48,7 +51,12 @@ class HvbGenerator(pl.LightningModule):
         assert isinstance(vocabulary, dict) and all([isinstance(k, str) and isinstance(v, int)
                                                      for k, v in vocabulary.items()])
         self.vocabulary = vocabulary
-        self.vocabulary_reversed = {v: k for k, v in vocabulary.items()}
+        self.vocabulary_reversed = {v: k for k, v in self.vocabulary.items()}
+        assert isinstance(start_token, str) and isinstance(end_token, str) and isinstance(pad_token, str)
+        self.start_token, self.end_token, self.pad_token = start_token, end_token, pad_token
+        # self.vocabulary_predictable = {k: i for i, (k, _) in enumerate(self.vocabulary.items())
+        #                                if k != self.pad_token}
+        # self.vocabulary_predictable_reversed = {v: k for k, v in self.vocabulary_predictable.items()}
 
         # preprocessing
         assert isinstance(mix_fourier_with_tokens, bool)
@@ -83,12 +91,6 @@ class HvbGenerator(pl.LightningModule):
         #     AddGaussianNoise(strength=self.noise_strength)
         # )
 
-        # self.preprocessing = nn.Sequential(
-        #     FouriEncoderBlock(in_features=self.in_channels,
-        #                       mid_features=self.embeddings_dim,
-        #                       out_features=self.embeddings_dim,
-        #                       mix_fourier_with_tokens=self.mix_fourier_with_tokens),
-        # )
         self.encoder = FouriEncoder(embeddings_dim=self.embeddings_dim,
                                     num_encoders=self.num_encoders,
                                     dropout_p=self.dropout_p,
@@ -159,7 +161,8 @@ class HvbGenerator(pl.LightningModule):
         ], dim=-1)
         loss = F.cross_entropy(input=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
                                target=einops.rearrange(gt_tokens, "b s -> (b s)"),
-                               label_smoothing=0.1)
+                               label_smoothing=0.1,
+                               ignore_index=self.vocabulary[self.pad_token])
         return {
             "loss": loss,
             "gt_tokens": gt_tokens,
@@ -174,7 +177,8 @@ class HvbGenerator(pl.LightningModule):
             torch.as_tensor([self.vocabulary["[PAD]"]], device=self.device).repeat(names.shape[0], 1)
         ], dim=-1)
         loss = F.cross_entropy(input=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
-                               target=einops.rearrange(gt_tokens, "b s -> (b s)"))
+                               target=einops.rearrange(gt_tokens, "b s -> (b s)"),
+                               ignore_index=self.vocabulary[self.pad_token])
         return {
             "loss": loss,
             "gt_tokens": gt_tokens,
@@ -202,6 +206,7 @@ class HvbGenerator(pl.LightningModule):
                                  torch.cat([e["pred_tokens"] for e in outputs], dim=0)
         f1 = torchmetrics.functional.f1_score(preds=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
                                               target=einops.rearrange(gt_tokens, "b s -> (b s)"),
+                                              ignore_index=self.vocabulary[self.pad_token],
                                               average="micro")
         self.log(f"f1_{phase}", f1, prog_bar=True)
 
@@ -219,10 +224,10 @@ class HvbGenerator(pl.LightningModule):
             device=self.device
         ).repeat(1, 1)
         for _ in range(20):
-            next_token = self(tokens)[:, -2:-1]
-            next_token = F.softmax(next_token, dim=1)
+            next_token = self(tokens)[:, -1]
+            next_token = F.softmax(next_token, dim=-1)
             next_token = torch.argmax(next_token, dim=-1)
-            tokens = torch.cat([tokens, next_token], dim=-1)
+            tokens = torch.cat([tokens, next_token.repeat(1, 1)], dim=-1)
             if next_token.detach().item() == self.vocabulary["[SEP]"]:
                 break
         tokens = tokens.squeeze(0)[1:].detach().tolist()
