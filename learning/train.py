@@ -25,7 +25,8 @@ logging.info(f"line args:\n{pformat(args)}")
 set_global_seed(seed=args['seed'])
 
 # sets up the dataset
-dataset = RPGObjectDataset(path=join("data", "oggetti_magici.csv"))
+dataset = RPGObjectDataset(path=join("data", "oggetti_magici.csv"),
+                           max_length=args['max_sentences_length'])
 
 # sets up the model
 model: pl.LightningModule = HvbGenerator(

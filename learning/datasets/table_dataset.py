@@ -26,7 +26,7 @@ class RPGTableDataset(Dataset, ABC):
     def __init__(
             self,
             path: str,
-            max_length: int = 1024,
+            max_length: int = 512,
     ):
         super().__init__()
 

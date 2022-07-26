@@ -151,7 +151,6 @@ class HvbGenerator(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         names: torch.Tensor = batch["name"]
-        # descriptions: torch.Tensor = batch["description"]
         pred_tokens = self(names)  # (b l d)
         gt_tokens = torch.cat([
             names[:, 1:],
@@ -165,7 +164,6 @@ class HvbGenerator(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         names: torch.Tensor = batch["name"]
-        # descriptions: torch.Tensor = batch["description"]
         pred_tokens = self(names)  # (b l d)
         gt_tokens = torch.cat([
             names[:, 1:],
@@ -217,18 +215,13 @@ class AddGaussianNoise(nn.Module):
 
 
 if __name__ == "__main__":
-    # batch_size = 64
-    # length = 1024
-    # batch = {
-    #     "names": torch.randn(batch_size, length, dtype=torch.long),
-    # }
     dataset = RPGObjectDataset(path=join("..", "..", "data", "oggetti_magici.csv"))
-    model = HvbGenerator(embeddings_dim=512, vocabulary=dataset.tokenizer.get_vocab(),
-                         num_encoders=2, num_decoders=2,
+    model = HvbGenerator(embeddings_dim=128, vocabulary=dataset.tokenizer.get_vocab(),
+                         num_encoders=1, num_decoders=1,
                          use_masking=True,
                          mask_perc_min=0.1, mask_perc_max=0.3,
                          mix_fourier_with_tokens=True)
-    dataloader = DataLoader(dataset, batch_size=32)
+    dataloader = DataLoader(dataset, batch_size=8)
     model.training = True
     print(model)
     with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:

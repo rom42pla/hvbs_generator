@@ -11,6 +11,10 @@ def get_args() -> Dict[str, Union[bool, str, int, float]]:
     parser.add_argument("--seed",
                         type=int,
                         help="The seed for reproducibility")
+    parser.add_argument("--max_sentences_length",
+                        type=int,
+                        default=64,
+                        help="The maximum length to which the training sentences are truncated or padded")
 
     # training args
     parser.add_argument("--batch_size",

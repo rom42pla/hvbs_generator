@@ -27,9 +27,9 @@ class RPGObjectDataset(RPGTableDataset):
 
     def __init__(
             self,
-            path: str,
+            **kwargs
     ):
-        super().__init__(path=path)
+        super().__init__(**kwargs)
 
     def load_data(self) -> List[Dict[str, str]]:
         data_df = pd.read_csv(self.path)
