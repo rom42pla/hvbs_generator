@@ -34,7 +34,7 @@ squad_test = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-test.json"
                           vocab_path=join("learning", "datasets_classes", "vocab.txt"),
                           max_length=args['max_sentences_length'])
 logging.info(f"SQUAD dataset loaded")
-#
+
 # sets up the model
 model: pl.LightningModule = HvbGenerator(
     vocabulary=squad_train.tokenizer.get_vocab(),
@@ -44,17 +44,17 @@ model: pl.LightningModule = HvbGenerator(
     noise_strength=args['noise_strength'], dropout_p=args['dropout_p'],
     mix_fourier_with_tokens=True,
 )
-# initial_weights = deepcopy(model.state_dict().__str__())
-#
-# # pre-trains the model
-# train(
-#     dataset_train=squad_train,
-#     dataset_val=squad_test,
-#     model=model,
-#     **args
-# )
-# assert initial_weights != model.state_dict().__str__(), \
-#     f"model not updating"
+initial_weights = deepcopy(model.state_dict().__str__())
+
+# pre-trains the model
+train(
+    dataset_train=squad_train,
+    dataset_val=squad_test,
+    model=model,
+    **args
+)
+assert initial_weights != model.state_dict().__str__(), \
+    f"model not updating"
 
 initial_weights = deepcopy(model.state_dict().__str__())
 dataset = RPGObjectDataset(path=join("learning", "datasets", "oggetti_magici.csv"),
