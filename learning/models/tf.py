@@ -191,7 +191,7 @@ class HvbGenerator(pl.LightningModule):
         phase: str = "train" if self.training is True else "val"
         # loss
         losses: torch.Tensor = torch.stack([e["loss"] for e in outputs])
-        self.log(f"loss_{phase}", losses.mean(), prog_bar=False)
+        self.log(f"loss_{phase}", losses.mean(), prog_bar=True if phase == "val" else False)
 
     def optimizer_zero_grad(self, epoch, batch_idx, optimizer, optimizer_idx):
         optimizer.zero_grad(set_to_none=True)
