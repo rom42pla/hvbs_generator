@@ -210,8 +210,8 @@ class HvbGenerator(pl.LightningModule):
         losses: torch.Tensor = torch.stack([e["loss"] for e in outputs])
         self.log(f"loss_{phase}", losses.mean(), prog_bar=True if phase == "val" else False)
         # f1
-        gt_tokens, pred_tokens = torch.cat([e["gt_tokens"] for e in outputs], dim=0), \
-                                 torch.cat([e["pred_tokens"] for e in outputs], dim=0)
+        gt_tokens, pred_tokens = torch.cat([e["gt_tokens"].detach() for e in outputs], dim=0), \
+                                 torch.cat([e["pred_tokens"].detach() for e in outputs], dim=0)
         f1 = torchmetrics.functional.f1_score(preds=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
                                               target=einops.rearrange(gt_tokens, "b s -> (b s)"),
                                               ignore_index=self.vocabulary[self.pad_token],
