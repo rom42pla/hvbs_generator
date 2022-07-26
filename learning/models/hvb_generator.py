@@ -1,4 +1,5 @@
 import gc
+import logging
 import math
 from collections import OrderedDict
 from os.path import join
@@ -218,8 +219,9 @@ class HvbGenerator(pl.LightningModule):
         self.log_stats(outputs)
         del outputs
         gc.collect()
+        logging.info(f"example generations")
         for _ in range(4):
-            print(model.generate())
+            print(self.generate())
 
     def log_stats(self, outputs: List[Dict[str, torch.Tensor]]):
         # name of the current phase
@@ -249,17 +251,18 @@ class HvbGenerator(pl.LightningModule):
         # ).repeat(1, 1)
         tokens = []
         for _ in range(20):
-            next_token = self(tokens=torch.as_tensor([
-                self.vocabulary[self.start_token],
-                *tokens,
-                self.vocabulary[self.end_token]
-            ], device=self.device).repeat(1, 1))[:, -1]
-            next_token = F.softmax(next_token, dim=-1)
-            next_token = torch.argmax(next_token, dim=-1)
-            next_token = next_token.detach().item()
-            if next_token == self.vocabulary["[SEP]"]:
-                break
-            tokens += [next_token]
+            with torch.no_grad():
+                next_token = self(tokens=torch.as_tensor([
+                    self.vocabulary[self.start_token],
+                    *tokens,
+                    self.vocabulary[self.end_token]
+                ], device=self.device).repeat(1, 1))[:, -1]
+                next_token = F.softmax(next_token, dim=-1)
+                next_token = torch.argmax(next_token, dim=-1)
+                next_token = next_token.detach().item()
+                if next_token == self.vocabulary["[SEP]"]:
+                    break
+                tokens += [next_token]
         tokens = [self.vocabulary_reversed[token_id]
                   for token_id in tokens]
         # merges the tokens
