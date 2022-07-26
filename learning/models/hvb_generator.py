@@ -148,8 +148,6 @@ class HvbGenerator(pl.LightningModule):
                                                   pad_embedding.repeat(names_embeddings.shape[0], 1, 1)],
                                                  dim=1)
             names_decoded = self.decoder(x_encoder=names_encoded, x_decoder=names_embeddings_shifted)
-            if self.training:
-                names_decoded = self.add_noise(names_decoded)
         # print("names_decoded", names_decoded.shape)
         with profiler.record_function("classification"):
             pred_tokens = self.classification(names_decoded)
@@ -231,9 +229,9 @@ class HvbGenerator(pl.LightningModule):
             next_token = self(tokens)[:, -1]
             next_token = F.softmax(next_token, dim=-1)
             next_token = torch.argmax(next_token, dim=-1)
-            tokens = torch.cat([tokens, next_token.repeat(1, 1)], dim=-1)
             if next_token.detach().item() == self.vocabulary["[SEP]"]:
                 break
+            tokens = torch.cat([tokens, next_token.repeat(1, 1)], dim=-1)
         tokens = tokens.squeeze(0)[1:].detach().tolist()
         tokens = [self.vocabulary_reversed[token_id]
                   for token_id in tokens]
