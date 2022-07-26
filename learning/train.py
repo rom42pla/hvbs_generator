@@ -12,7 +12,8 @@ import pytorch_lightning as pl
 
 # sets up the loggers
 from learning.arg_parsers.train import get_args
-from learning.datasets.objects import RPGObjectDataset
+from learning.datasets_classes.objects import RPGObjectDataset
+from learning.datasets_classes.squad import SQUADDataset
 from learning.models.hvb_generator import HvbGenerator
 from learning.utils import init_logger, set_global_seed, train
 
@@ -25,9 +26,11 @@ logging.info(f"line args:\n{pformat(args)}")
 # sets the random seed
 set_global_seed(seed=args['seed'])
 
-# sets up the dataset
+# sets up the datasets
 dataset = RPGObjectDataset(path=join("data", "oggetti_magici.csv"),
                            max_length=args['max_sentences_length'])
+squad_train = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-train.json"))
+squad_test = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-test.json"))
 
 # sets up the model
 model: pl.LightningModule = HvbGenerator(
@@ -41,19 +44,19 @@ model: pl.LightningModule = HvbGenerator(
 initial_weights = deepcopy(model.state_dict().__str__())
 
 # splits the dataset into training and validation
-shuffled_indices = torch.randperm(len(dataset))
-dataset_train = Subset(dataset, shuffled_indices[:int(len(dataset) * args['train_set_size'])])
-dataset_val = Subset(dataset, shuffled_indices[int(len(dataset) * args['train_set_size']):])
+# shuffled_indices = torch.randperm(len(dataset))
+# dataset_train = Subset(dataset, shuffled_indices[:int(len(dataset) * args['train_set_size'])])
+# dataset_val = Subset(dataset, shuffled_indices[int(len(dataset) * args['train_set_size']):])
 
 # trains the model
 logs = train(
-    dataset_train=dataset_train,
-    dataset_val=dataset_val,
+    dataset_train=squad_train,
+    dataset_val=squad_test,
     model=model,
     **args
 )
 assert initial_weights != model.state_dict().__str__(), \
-        f"model not updating"
+    f"model not updating"
 for _ in range(8):
     print(model.generate())
 

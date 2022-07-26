@@ -20,7 +20,7 @@ from torch.profiler import profile, ProfilerActivity
 from torch.utils.data import DataLoader
 from torchaudio import transforms
 
-from learning.datasets.objects import RPGObjectDataset
+from learning.datasets_classes.objects import RPGObjectDataset
 from learning.models.modules import FouriEncoderBlock, FouriEncoder, FouriDecoder
 
 
