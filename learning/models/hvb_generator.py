@@ -207,7 +207,7 @@ class HvbGenerator(pl.LightningModule):
         # name of the current phase
         phase: str = "train" if self.training is True else "val"
         # loss
-        losses: torch.Tensor = torch.stack([e["loss"] for e in outputs])
+        losses: torch.Tensor = torch.stack([e["loss"].detach() for e in outputs])
         self.log(f"loss_{phase}", losses.mean(), prog_bar=True if phase == "val" else False)
         # f1
         gt_tokens, pred_tokens = torch.cat([e["gt_tokens"].detach() for e in outputs], dim=0), \
