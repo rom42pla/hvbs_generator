@@ -133,24 +133,24 @@ class HvbGenerator(pl.LightningModule):
             tokens = tokens.to(self.device)
         # print("names", names.shape)
         with profiler.record_function("embeddings"):
-            tokens_embeddings = self.tokens_embedder(tokens)
+            tokens = self.tokens_embedder(tokens)
             if self.training:
-                tokens_embeddings = self.add_noise(tokens_embeddings)
+                tokens = self.add_noise(tokens)
         # print("names_embeddings", names_embeddings.shape)
         with profiler.record_function("encoder"):
-            tokens_encoded = self.encoder(tokens_embeddings)
+            tokens = self.encoder(tokens)
         # print("names_encoded", names_encoded.shape)
         with profiler.record_function("decoder"):
             pad_embedding = self.tokens_embedder(torch.as_tensor([self.vocabulary["[PAD]"]],
                                                                  device=self.device))
-            tokens_embeddings_shifted = torch.cat([tokens_embeddings[:, 0:1],
-                                                   tokens_embeddings[:, 2:],
-                                                   pad_embedding.repeat(tokens_embeddings.shape[0], 1, 1)],
+            tokens_embeddings_shifted = torch.cat([tokens[:, 0:1],
+                                                   tokens[:, 2:],
+                                                   pad_embedding.repeat(tokens.shape[0], 1, 1)],
                                                   dim=1)
-            tokens_decoded = self.decoder(x_encoder=tokens_encoded, x_decoder=tokens_embeddings_shifted)
+            tokens = self.decoder(x_encoder=tokens, x_decoder=tokens_embeddings_shifted)
         # print("names_decoded", names_decoded.shape)
         with profiler.record_function("classification"):
-            pred_tokens = self.classification(tokens_decoded)
+            pred_tokens = self.classification(tokens)
 
         return pred_tokens
 
