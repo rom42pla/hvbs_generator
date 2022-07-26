@@ -32,9 +32,11 @@ dataset = RPGObjectDataset(path=join("learning", "datasets", "oggetti_magici.csv
 shuffled_indices = torch.randperm(len(dataset))
 dataset_train = Subset(dataset, shuffled_indices[:int(len(dataset) * args['train_set_size'])])
 dataset_val = Subset(dataset, shuffled_indices[int(len(dataset) * args['train_set_size']):])
+logging.info(f"Hvb dataset loaded")
 
 squad_train = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-train.json"))
 squad_test = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-test.json"))
+logging.info(f"SQUAD dataset loaded")
 
 # sets up the model
 model: pl.LightningModule = HvbGenerator(
