@@ -226,7 +226,7 @@ class HvbGenerator(pl.LightningModule):
         self.log(f"loss_{phase}", losses.mean(), prog_bar=True if phase == "val" else False)
         # f1
         f1s: torch.Tensor = torch.stack([e["f1"].detach().cpu() for e in outputs])
-        self.log(f"f1_{f1s}", f1s.mean(), prog_bar=True)
+        self.log(f"f1_{f1s}", f1s.mean().mean(), prog_bar=True)
         del losses, f1s
         gc.collect()
 
