@@ -218,6 +218,8 @@ class HvbGenerator(pl.LightningModule):
         self.log_stats(outputs)
         del outputs
         gc.collect()
+        for _ in range(4):
+            print(model.generate())
 
     def log_stats(self, outputs: List[Dict[str, torch.Tensor]]):
         # name of the current phase
