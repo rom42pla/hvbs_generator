@@ -110,10 +110,11 @@ def train(
         callbacks=init_callbacks(swa=stochastic_weight_average)
     )
     # eventually selects a starting learning rate
-    trainer.tune(model,
-                 train_dataloaders=dataloader_train,
-                 val_dataloaders=dataloader_val)
-    # logging.info(f"learning rate has been set to {model.learning_rate}")
+    if auto_lr_finder is True:
+        trainer.tune(model,
+                     train_dataloaders=dataloader_train,
+                     val_dataloaders=dataloader_val)
+        logging.info(f"learning rate has been set to {model.learning_rate}")
 
     # trains the model
     trainer.fit(model,
