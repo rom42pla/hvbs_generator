@@ -47,7 +47,7 @@ class RPGObjectDataset(RPGTableDataset):
 
 
 if __name__ == "__main__":
-    dataset = RPGObjectDataset(path=join("..", "..", "data", "oggetti_magici.csv"))
+    dataset = RPGObjectDataset(path=join("..", "datasets", "oggetti_magici.csv"))
     x = dataset[0]
     dataloader = DataLoader(dataset, batch_size=64)
     print(dataset.tokenizer.pad_token)

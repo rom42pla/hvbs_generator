@@ -27,20 +27,15 @@ logging.info(f"line args:\n{pformat(args)}")
 set_global_seed(seed=args['seed'])
 
 # sets up the datasets
-dataset = RPGObjectDataset(path=join("learning", "datasets", "oggetti_magici.csv"),
-                           max_length=args['max_sentences_length'])
-shuffled_indices = torch.randperm(len(dataset))
-dataset_train = Subset(dataset, shuffled_indices[:int(len(dataset) * args['train_set_size'])])
-dataset_val = Subset(dataset, shuffled_indices[int(len(dataset) * args['train_set_size']):])
-logging.info(f"Hvb dataset loaded")
-
-squad_train = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-train.json"))
-squad_test = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-test.json"))
+squad_train = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-train.json"),
+                           vocab_path=join("learning", "datasets_classes", "vocab.txt"),)
+squad_test = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-test.json"),
+                          vocab_path=join("learning", "datasets_classes", "vocab.txt"),)
 logging.info(f"SQUAD dataset loaded")
 
 # sets up the model
 model: pl.LightningModule = HvbGenerator(
-    vocabulary=dataset.tokenizer.get_vocab(),
+    vocabulary=squad_train.tokenizer.get_vocab(),
     embeddings_dim=args['embeddings_dim'],
     num_encoders=args['num_encoders'], num_decoders=args['num_decoders'],
     use_masking=True, mask_perc_min=0.2, mask_perc_max=0.3,
@@ -48,8 +43,6 @@ model: pl.LightningModule = HvbGenerator(
     mix_fourier_with_tokens=True,
 )
 initial_weights = deepcopy(model.state_dict().__str__())
-
-
 
 # pre-trains the model
 train(
@@ -61,6 +54,14 @@ train(
 assert initial_weights != model.state_dict().__str__(), \
     f"model not updating"
 
+initial_weights = deepcopy(model.state_dict().__str__())
+dataset = RPGObjectDataset(path=join("learning", "datasets", "oggetti_magici.csv"),
+                           vocab_path=join("learning", "datasets_classes", "vocab.txt"),
+                           max_length=args['max_sentences_length'])
+shuffled_indices = torch.randperm(len(dataset))
+dataset_train = Subset(dataset, shuffled_indices[:int(len(dataset) * args['train_set_size'])])
+dataset_val = Subset(dataset, shuffled_indices[int(len(dataset) * args['train_set_size']):])
+logging.info(f"Hvb dataset loaded")
 # finetune the model
 args['learning_rate'] *= 0.1
 train(

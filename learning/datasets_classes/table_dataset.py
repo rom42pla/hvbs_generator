@@ -26,14 +26,19 @@ class RPGTableDataset(Dataset, ABC):
     def __init__(
             self,
             path: str,
+            vocab_path: str,
             max_length: int = 512,
     ):
         super().__init__()
 
         assert exists(path)
         self.path: str = path
+        assert exists(vocab_path)
+        self.vocab_path: str = vocab_path
         self.data_raw: List[Dict[str, str]] = self.load_data()
-        self.tokenizer: BertTokenizerFast = AutoTokenizer.from_pretrained("dbmdz/bert-base-italian-xxl-uncased")
+        self.tokenizer = BertTokenizerFast(self.vocab_path, lowercase=True)
+
+        # tokenizer = BertWordPieceTokenizer("bert-base-uncased-vocab.txt", lowercase=True)
         assert isinstance(max_length, int) and max_length >= 1
         self.max_length: int = max_length
         # self.setup_data()
