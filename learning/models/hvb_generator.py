@@ -34,13 +34,14 @@ class HvbGenerator(pl.LightningModule):
                  embeddings_dim: int = 512,
                  num_encoders: int = 1,
                  num_decoders: int = 1,
-                 dropout_p: Union[int, float] = 0.2,
+                 dropout_p: Union[int, float] = 0.25,
 
-                 learning_rate: float = 0.0002,
+                 learning_rate: float = 0.002,
 
                  use_masking: bool = True,
-                 mask_perc_min: float = 0.05,
+                 mask_perc_min: float = 0.2,
                  mask_perc_max: float = 0.3,
+                 noise_strength: float = 0.1,
 
                  mix_fourier_with_tokens: bool = True,
 
@@ -73,6 +74,8 @@ class HvbGenerator(pl.LightningModule):
             self.mask_perc_max, self.mask_perc_min = None, None
         assert 0 <= dropout_p < 1
         self.dropout_p = dropout_p
+        assert noise_strength >= 0
+        self.noise_strength = noise_strength
 
         # model architecture
         assert isinstance(num_encoders, int) and num_encoders >= 1
@@ -87,9 +90,9 @@ class HvbGenerator(pl.LightningModule):
         self.learning_rate = learning_rate
 
         self.tokens_embedder = nn.Embedding(len(self.vocabulary), self.embeddings_dim)
-        # self.add_noise = nn.Sequential(
-        #     AddGaussianNoise(strength=self.noise_strength)
-        # )
+        self.add_noise = nn.Sequential(
+            AddGaussianNoise(strength=self.noise_strength)
+        )
 
         self.encoder = FouriEncoder(embeddings_dim=self.embeddings_dim,
                                     num_encoders=self.num_encoders,
@@ -131,6 +134,8 @@ class HvbGenerator(pl.LightningModule):
         # print("names", names.shape)
         with profiler.record_function("embeddings"):
             names_embeddings = self.tokens_embedder(names)
+            if self.training:
+                names_embeddings = self.add_noise(names_embeddings)
         # print("names_embeddings", names_embeddings.shape)
         with profiler.record_function("encoder"):
             names_encoded = self.encoder(names_embeddings)
@@ -140,15 +145,14 @@ class HvbGenerator(pl.LightningModule):
                                                                  device=self.device))
             names_embeddings_shifted = torch.cat([names_embeddings[:, 0:1],
                                                   names_embeddings[:, 2:],
-                                                  pad_embedding.repeat(names_embeddings.shape[0], 1, 1)], dim=1)
+                                                  pad_embedding.repeat(names_embeddings.shape[0], 1, 1)],
+                                                 dim=1)
             names_decoded = self.decoder(x_encoder=names_encoded, x_decoder=names_embeddings_shifted)
+            if self.training:
+                names_decoded = self.add_noise(names_decoded)
         # print("names_decoded", names_decoded.shape)
         with profiler.record_function("classification"):
             pred_tokens = self.classification(names_decoded)
-
-        # eventually adds gaussian noise
-        # if self.training:
-        #     eegs = self.add_noise(eegs)
 
         return pred_tokens
 
@@ -266,4 +270,3 @@ if __name__ == "__main__":
     print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=8))
     for _ in range(4):
         print(model.generate())
-    # print(torchvision.models.resnet18())

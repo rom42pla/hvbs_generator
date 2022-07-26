@@ -110,7 +110,7 @@ class FouriEncoder(nn.Module):
             x = torch.cat([start_token.repeat(x.shape[0], 1, 1),
                            x,
                            end_token.repeat(x.shape[0], 1, 1)], dim=1)
-            x[:, self.mask_start_index:] = self.add_positional_embeddings_fn(x[:, self.mask_start_index:])
+        x[:, self.mask_start_index:] = self.add_positional_embeddings_fn(x[:, self.mask_start_index:])
 
         # encoders pass
         x = self.encoder_blocks(x)
@@ -297,8 +297,7 @@ class FouriDecoder(nn.Module):
             x_decoder = torch.cat([start_token.repeat(x_decoder.shape[0], 1, 1),
                                    x_decoder,
                                    end_token.repeat(x_decoder.shape[0], 1, 1)], dim=1)
-            x_decoder[:, self.mask_start_index:] = self.add_positional_embeddings_fn(
-                x_decoder[:, self.mask_start_index:])
+        x_decoder[:, self.mask_start_index:] = self.add_positional_embeddings_fn(x_decoder[:, self.mask_start_index:])
 
         # decoders pass
         for decoder_block in self.decoder_blocks:
