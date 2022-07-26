@@ -65,7 +65,7 @@ dataset_train = Subset(dataset, shuffled_indices[:int(len(dataset) * args['train
 dataset_val = Subset(dataset, shuffled_indices[int(len(dataset) * args['train_set_size']):])
 logging.info(f"Hvb dataset loaded")
 # finetune the model
-args['learning_rate'] *= 0.1
+
 train(
     dataset_train=dataset_train,
     dataset_val=dataset_val,
