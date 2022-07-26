@@ -128,38 +128,41 @@ class HvbGenerator(pl.LightningModule):
         self.save_hyperparameters()
 
     def forward(self,
-                names: torch.Tensor):
-        if names.device != self.device:
-            names = names.to(self.device)
+                tokens: torch.Tensor):
+        if tokens.device != self.device:
+            tokens = tokens.to(self.device)
         # print("names", names.shape)
         with profiler.record_function("embeddings"):
-            names_embeddings = self.tokens_embedder(names)
+            tokens_embeddings = self.tokens_embedder(tokens)
             if self.training:
-                names_embeddings = self.add_noise(names_embeddings)
+                tokens_embeddings = self.add_noise(tokens_embeddings)
         # print("names_embeddings", names_embeddings.shape)
         with profiler.record_function("encoder"):
-            names_encoded = self.encoder(names_embeddings)
+            tokens_encoded = self.encoder(tokens_embeddings)
         # print("names_encoded", names_encoded.shape)
         with profiler.record_function("decoder"):
             pad_embedding = self.tokens_embedder(torch.as_tensor([self.vocabulary["[PAD]"]],
                                                                  device=self.device))
-            names_embeddings_shifted = torch.cat([names_embeddings[:, 0:1],
-                                                  names_embeddings[:, 2:],
-                                                  pad_embedding.repeat(names_embeddings.shape[0], 1, 1)],
+            tokens_embeddings_shifted = torch.cat([tokens_embeddings[:, 0:1],
+                                                  tokens_embeddings[:, 2:],
+                                                  pad_embedding.repeat(tokens_embeddings.shape[0], 1, 1)],
                                                  dim=1)
-            names_decoded = self.decoder(x_encoder=names_encoded, x_decoder=names_embeddings_shifted)
+            tokens_decoded = self.decoder(x_encoder=tokens_encoded, x_decoder=tokens_embeddings_shifted)
         # print("names_decoded", names_decoded.shape)
         with profiler.record_function("classification"):
-            pred_tokens = self.classification(names_decoded)
+            pred_tokens = self.classification(tokens_decoded)
 
         return pred_tokens
 
     def training_step(self, batch, batch_idx):
-        names: torch.Tensor = batch["name"]
-        pred_tokens = self(names)
+        if "name" in batch.keys():
+            tokens: torch.Tensor = batch["name"]
+        elif "context" in batch.keys():
+            tokens: torch.Tensor = batch["context"]
+        pred_tokens = self(tokens)
         gt_tokens = torch.cat([
-            names[:, 1:],
-            torch.as_tensor([self.vocabulary["[PAD]"]], device=self.device).repeat(names.shape[0], 1)
+            tokens[:, 1:],
+            torch.as_tensor([self.vocabulary["[PAD]"]], device=self.device).repeat(tokens.shape[0], 1)
         ], dim=-1)
         loss = F.cross_entropy(input=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
                                target=einops.rearrange(gt_tokens, "b s -> (b s)"),
@@ -172,11 +175,14 @@ class HvbGenerator(pl.LightningModule):
         }
 
     def validation_step(self, batch, batch_idx):
-        names: torch.Tensor = batch["name"]  # (b s)
-        pred_tokens = self(names)
+        if "name" in batch.keys():
+            tokens: torch.Tensor = batch["name"]
+        elif "context" in batch.keys():
+            tokens: torch.Tensor = batch["context"]
+        pred_tokens = self(tokens)
         gt_tokens = torch.cat([
-            names[:, 1:],
-            torch.as_tensor([self.vocabulary["[PAD]"]], device=self.device).repeat(names.shape[0], 1)
+            tokens[:, 1:],
+            torch.as_tensor([self.vocabulary["[PAD]"]], device=self.device).repeat(tokens.shape[0], 1)
         ], dim=-1)
         loss = F.cross_entropy(input=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
                                target=einops.rearrange(gt_tokens, "b s -> (b s)"),

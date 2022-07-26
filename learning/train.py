@@ -27,8 +27,12 @@ logging.info(f"line args:\n{pformat(args)}")
 set_global_seed(seed=args['seed'])
 
 # sets up the datasets
-dataset = RPGObjectDataset(path=join("data", "oggetti_magici.csv"),
+dataset = RPGObjectDataset(path=join("learning", "datasets", "oggetti_magici.csv"),
                            max_length=args['max_sentences_length'])
+shuffled_indices = torch.randperm(len(dataset))
+dataset_train = Subset(dataset, shuffled_indices[:int(len(dataset) * args['train_set_size'])])
+dataset_val = Subset(dataset, shuffled_indices[int(len(dataset) * args['train_set_size']):])
+
 squad_train = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-train.json"))
 squad_test = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-test.json"))
 
@@ -43,13 +47,10 @@ model: pl.LightningModule = HvbGenerator(
 )
 initial_weights = deepcopy(model.state_dict().__str__())
 
-# splits the dataset into training and validation
-# shuffled_indices = torch.randperm(len(dataset))
-# dataset_train = Subset(dataset, shuffled_indices[:int(len(dataset) * args['train_set_size'])])
-# dataset_val = Subset(dataset, shuffled_indices[int(len(dataset) * args['train_set_size']):])
 
-# trains the model
-logs = train(
+
+# pre-trains the model
+train(
     dataset_train=squad_train,
     dataset_val=squad_test,
     model=model,
@@ -57,6 +58,18 @@ logs = train(
 )
 assert initial_weights != model.state_dict().__str__(), \
     f"model not updating"
+
+# finetune the model
+args['learning_rate'] *= 0.1
+train(
+    dataset_train=dataset_train,
+    dataset_val=dataset_val,
+    model=model,
+    **args
+)
+assert initial_weights != model.state_dict().__str__(), \
+    f"model not updating"
+
 for _ in range(8):
     print(model.generate())
 
