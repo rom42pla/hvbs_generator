@@ -222,7 +222,7 @@ class HvbGenerator(pl.LightningModule):
             pad_id=self.vocabulary[self.pad_token],
             length=self.max_sentence_length,
         )
-        tokens = torch.as_tensor([o.ids for o in self.tokenizer.encode_batch(tokens_raw)])
+        tokens = torch.as_tensor([o.ids for o in self.tokenizer.encode_batch(tokens_raw)], device=self.device)
         self.tokenizer.no_padding()
         # makes the prediction
         pred_tokens = self(tokens)
