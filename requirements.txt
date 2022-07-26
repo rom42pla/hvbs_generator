@@ -9,6 +9,7 @@ scipy
 torch
 functorch
 pytorch-lightning
+torchmetrics
 transformers
 einops
 matplotlib

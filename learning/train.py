@@ -12,7 +12,7 @@ import pytorch_lightning as pl
 # sets up the loggers
 from learning.arg_parsers.train import get_args
 from learning.datasets.objects import RPGObjectDataset
-from learning.models.tf import HvbGenerator
+from learning.models.hvb_generator import HvbGenerator
 from learning.utils import init_logger, set_global_seed, train
 
 init_logger()

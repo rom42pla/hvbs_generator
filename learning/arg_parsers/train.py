@@ -79,7 +79,7 @@ def get_args() -> Dict[str, Union[bool, str, int, float]]:
                         action="store_true",
                         help="Whether not to mask a percentage of embeddings during training of FEEGT")
     parser.add_argument("--learning_rate",
-                        default=1e-4,
+                        default=1e-3,
                         type=float,
                         help="Learning rate of the model")
 

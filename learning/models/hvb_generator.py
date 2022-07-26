@@ -152,15 +152,18 @@ class HvbGenerator(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         names: torch.Tensor = batch["name"]
-        pred_tokens = self(names)  # (b l d)
+        pred_tokens = self(names)
         gt_tokens = torch.cat([
             names[:, 1:],
             torch.as_tensor([self.vocabulary["[PAD]"]], device=self.device).repeat(names.shape[0], 1)
         ], dim=-1)
-        loss = sum([F.cross_entropy(input=pred_tokens[:, i_token], target=gt_tokens[:, i_token], label_smoothing=0.1)
-                    for i_token in range(gt_tokens.shape[1])])
+        loss = F.cross_entropy(input=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
+                               target=einops.rearrange(gt_tokens, "b s -> (b s)"),
+                               label_smoothing=0.1)
         return {
             "loss": loss,
+            "gt_tokens": gt_tokens,
+            "pred_tokens": pred_tokens,
         }
 
     def validation_step(self, batch, batch_idx):
@@ -170,10 +173,12 @@ class HvbGenerator(pl.LightningModule):
             names[:, 1:],
             torch.as_tensor([self.vocabulary["[PAD]"]], device=self.device).repeat(names.shape[0], 1)
         ], dim=-1)
-        loss = sum([F.cross_entropy(input=pred_tokens[:, i_token], target=gt_tokens[:, i_token])
-                    for i_token in range(gt_tokens.shape[1])])
+        loss = F.cross_entropy(input=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
+                               target=einops.rearrange(gt_tokens, "b s -> (b s)"))
         return {
             "loss": loss,
+            "gt_tokens": gt_tokens,
+            "pred_tokens": pred_tokens,
         }
 
     def training_epoch_end(self, outputs: List[Dict[str, torch.Tensor]]):
@@ -192,6 +197,12 @@ class HvbGenerator(pl.LightningModule):
         # loss
         losses: torch.Tensor = torch.stack([e["loss"] for e in outputs])
         self.log(f"loss_{phase}", losses.mean(), prog_bar=True if phase == "val" else False)
+        # f1
+        gt_tokens, pred_tokens = torch.cat([e["gt_tokens"] for e in outputs], dim=0), \
+                                 torch.cat([e["pred_tokens"] for e in outputs], dim=0)
+        f1 = torchmetrics.functional.f1_score(preds=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
+                                              target=einops.rearrange(gt_tokens, "b s -> (b s)"), average="micro")
+        self.log(f"f1_{phase}", f1, prog_bar=True)
 
     def optimizer_zero_grad(self, epoch, batch_idx, optimizer, optimizer_idx):
         optimizer.zero_grad(set_to_none=True)
@@ -247,6 +258,6 @@ if __name__ == "__main__":
     with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:
         model.training_step(next(iter(dataloader)), 0)
     print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=8))
-    for _ in range(64):
+    for _ in range(4):
         print(model.generate())
     # print(torchvision.models.resnet18())
