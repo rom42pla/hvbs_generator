@@ -237,8 +237,15 @@ class HvbGenerator(pl.LightningModule):
         tokens = tokens.squeeze(0)[1:].detach().tolist()
         tokens = [self.vocabulary_reversed[token_id]
                   for token_id in tokens]
-        generated_sentence = " ".join(tokens)
-        return generated_sentence
+        # merges the tokens
+        generated_string = ""
+        for token in tokens:
+            if token.startswith("##"):
+                generated_string += token[2:]
+            else:
+                generated_string += f" {token}"
+        generated_string = generated_string.strip().capitalize()
+        return generated_string
 
 
 class AddGaussianNoise(nn.Module):

@@ -61,4 +61,4 @@ for _ in range(8):
 del dataset
 gc.collect()
 
-print(logs)
+# print(logs)
