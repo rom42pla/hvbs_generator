@@ -49,7 +49,8 @@ logs = train(
     model=model,
     **args
 )
-
+for _ in range(64):
+    print(model.generate())
 # frees some memory
 del dataset
 gc.collect()

@@ -48,6 +48,7 @@ class HvbGenerator(pl.LightningModule):
         assert isinstance(vocabulary, dict) and all([isinstance(k, str) and isinstance(v, int)
                                                      for k, v in vocabulary.items()])
         self.vocabulary = vocabulary
+        self.vocabulary_reversed = {v: k for k, v in vocabulary.items()}
 
         # preprocessing
         assert isinstance(mix_fourier_with_tokens, bool)
@@ -163,8 +164,8 @@ class HvbGenerator(pl.LightningModule):
         }
 
     def validation_step(self, batch, batch_idx):
-        names: torch.Tensor = batch["name"]
-        pred_tokens = self(names)  # (b l d)
+        names: torch.Tensor = batch["name"]  # (b s)
+        pred_tokens = self(names)
         gt_tokens = torch.cat([
             names[:, 1:],
             torch.as_tensor([self.vocabulary["[PAD]"]], device=self.device).repeat(names.shape[0], 1)
@@ -200,6 +201,24 @@ class HvbGenerator(pl.LightningModule):
                                       lr=self.learning_rate)
         return optimizer
 
+    def generate(self):
+        tokens = torch.as_tensor(
+            [self.vocabulary["[CLS]"]],
+            device=self.device
+        ).repeat(1, 1)
+        for _ in range(20):
+            next_token = self(tokens)[:, -2:-1]
+            next_token = F.softmax(next_token, dim=1)
+            next_token = torch.argmax(next_token, dim=-1)
+            tokens = torch.cat([tokens, next_token], dim=-1)
+            if next_token.detach().item() == self.vocabulary["[SEP]"]:
+                break
+        tokens = tokens.squeeze(0)[1:].detach().tolist()
+        tokens = [self.vocabulary_reversed[token_id]
+                  for token_id in tokens]
+        generated_sentence = " ".join(tokens)
+        return generated_sentence
+
 
 class AddGaussianNoise(nn.Module):
     def __init__(self, strength: float = 0.1):
@@ -215,7 +234,8 @@ class AddGaussianNoise(nn.Module):
 
 
 if __name__ == "__main__":
-    dataset = RPGObjectDataset(path=join("..", "..", "data", "oggetti_magici.csv"))
+    dataset = RPGObjectDataset(path=join("..", "..", "data", "oggetti_magici.csv"),
+                               max_length=32)
     model = HvbGenerator(embeddings_dim=128, vocabulary=dataset.tokenizer.get_vocab(),
                          num_encoders=1, num_decoders=1,
                          use_masking=True,
@@ -227,5 +247,6 @@ if __name__ == "__main__":
     with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:
         model.training_step(next(iter(dataloader)), 0)
     print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=8))
-
+    for _ in range(64):
+        print(model.generate())
     # print(torchvision.models.resnet18())
