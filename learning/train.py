@@ -5,20 +5,12 @@ from os import makedirs
 from os.path import join
 from pprint import pformat
 from typing import Union, Dict
-
-import pandas as pd
 import torch
-
 from torch.utils.data import Subset
 import pytorch_lightning as pl
 
-from arg_parsers.train import get_args
-# from plots import plot_metrics
-# from utils import parse_dataset_class, set_global_seed, save_to_json, init_logger, train_k_fold, merge_logs
-# from datasets.eeg_emrec import EEGClassificationDataset
-# from models.feegt import FouriEEGTransformer
-
 # sets up the loggers
+from learning.arg_parsers.train import get_args
 from learning.datasets.objects import RPGObjectDataset
 from learning.models.tf import HvbGenerator
 from learning.utils import init_logger, set_global_seed, train
@@ -33,7 +25,7 @@ logging.info(f"line args:\n{pformat(args)}")
 set_global_seed(seed=args['seed'])
 
 # sets up the dataset
-dataset = RPGObjectDataset(path=join("..", "data", "oggetti_magici.csv"))
+dataset = RPGObjectDataset(path=join("data", "oggetti_magici.csv"))
 
 # sets up the model
 model: pl.LightningModule = HvbGenerator(
