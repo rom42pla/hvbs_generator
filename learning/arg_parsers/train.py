@@ -59,11 +59,11 @@ def get_args() -> Dict[str, Union[bool, str, int, float]]:
 
     # regularization
     parser.add_argument("--dropout_p",
-                        default=0.2,
+                        default=0.25,
                         type=float,
                         help="The amount of dropout to use")
     parser.add_argument("--noise_strength",
-                        default=0,
+                        default=0.1,
                         type=float,
                         help="The amount of gaussian noise to add to the eegs")
     parser.add_argument("--gradient_clipping",

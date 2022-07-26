@@ -34,7 +34,8 @@ model: pl.LightningModule = HvbGenerator(
     vocabulary=dataset.tokenizer.get_vocab(),
     embeddings_dim=args['embeddings_dim'],
     num_encoders=args['num_encoders'], num_decoders=args['num_decoders'],
-    use_masking=True, mask_perc_min=0.1, mask_perc_max=0.3,
+    use_masking=True, mask_perc_min=0.2, mask_perc_max=0.3,
+    noise_strength=args['noise_strength'], dropout_p=args['dropout_p'],
     mix_fourier_with_tokens=True,
 )
 initial_weights = deepcopy(model.state_dict().__str__())
