@@ -20,6 +20,8 @@ from pytorch_lightning.utilities.warnings import LightningDeprecationWarning
 from torch.utils.data import Dataset, DataLoader, Subset
 import pytorch_lightning as pl
 
+from learning.loggers.hvb_logger import HvbLogger
+
 
 def set_global_seed(seed: int) -> None:
     random.seed(seed)
@@ -98,7 +100,7 @@ def train(
         precision=precision,
         max_epochs=max_epochs,
         check_val_every_n_epoch=1,
-        logger=False,
+        logger=HvbLogger(),
         log_every_n_steps=1,
         enable_progress_bar=True,
         enable_model_summary=False,

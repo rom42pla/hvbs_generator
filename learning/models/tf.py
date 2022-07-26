@@ -156,7 +156,7 @@ class HvbGenerator(pl.LightningModule):
             names[:, 1:],
             torch.as_tensor([self.vocabulary["[PAD]"]], device=self.device).repeat(names.shape[0], 1)
         ], dim=-1)
-        loss = sum([F.cross_entropy(input=pred_tokens[:, i_token], target=gt_tokens[:, i_token])
+        loss = sum([F.cross_entropy(input=pred_tokens[:, i_token], target=gt_tokens[:, i_token], label_smoothing=0.1)
                     for i_token in range(gt_tokens.shape[1])])
         return {
             "loss": loss,

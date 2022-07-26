@@ -43,7 +43,7 @@ dataset_train = Subset(dataset, shuffled_indices[:int(len(dataset) * args['train
 dataset_val = Subset(dataset, shuffled_indices[int(len(dataset) * args['train_set_size']):])
 
 # trains the model
-train(
+logs = train(
     dataset_train=dataset_train,
     dataset_val=dataset_val,
     model=model,
@@ -53,3 +53,5 @@ train(
 # frees some memory
 del dataset
 gc.collect()
+
+print(logs)
