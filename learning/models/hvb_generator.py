@@ -201,7 +201,8 @@ class HvbGenerator(pl.LightningModule):
         gt_tokens, pred_tokens = torch.cat([e["gt_tokens"] for e in outputs], dim=0), \
                                  torch.cat([e["pred_tokens"] for e in outputs], dim=0)
         f1 = torchmetrics.functional.f1_score(preds=einops.rearrange(pred_tokens, "b s l -> (b s) l"),
-                                              target=einops.rearrange(gt_tokens, "b s -> (b s)"), average="micro")
+                                              target=einops.rearrange(gt_tokens, "b s -> (b s)"),
+                                              average="micro")
         self.log(f"f1_{phase}", f1, prog_bar=True)
 
     def optimizer_zero_grad(self, epoch, batch_idx, optimizer, optimizer_idx):

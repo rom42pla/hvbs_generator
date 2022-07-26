@@ -123,6 +123,8 @@ def train(
     assert initial_weights != model.state_dict().__str__(), \
         f"model not updating"
     logs: pd.DataFrame = deepcopy(trainer.logger.logs)
+    for _ in range(8):
+        print(model.generate())
     # frees some memory
     del trainer, \
         dataloader_train, dataloader_val
