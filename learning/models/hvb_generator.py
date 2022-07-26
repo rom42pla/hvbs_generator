@@ -170,8 +170,8 @@ class HvbGenerator(pl.LightningModule):
                                ignore_index=self.vocabulary[self.pad_token])
         return {
             "loss": loss,
-            "gt_tokens": gt_tokens.detach(),
-            "pred_tokens": pred_tokens.detach(),
+            "gt_tokens": gt_tokens.detach().cpu(),
+            "pred_tokens": pred_tokens.detach().cpu(),
         }
 
     def validation_step(self, batch, batch_idx):
@@ -189,8 +189,8 @@ class HvbGenerator(pl.LightningModule):
                                ignore_index=self.vocabulary[self.pad_token])
         return {
             "loss": loss,
-            "gt_tokens": gt_tokens.detach(),
-            "pred_tokens": pred_tokens.detach(),
+            "gt_tokens": gt_tokens.detach().cpu(),
+            "pred_tokens": pred_tokens.detach().cpu(),
         }
 
     def training_epoch_end(self, outputs: List[Dict[str, torch.Tensor]]):
