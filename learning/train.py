@@ -55,6 +55,8 @@ train(
 )
 assert initial_weights != model.state_dict().__str__(), \
     f"model not updating"
+for _ in range(8):
+    print(model.generate())
 
 initial_weights = deepcopy(model.state_dict().__str__())
 dataset = RPGObjectDataset(path=join("learning", "datasets", "oggetti_magici.csv"),
@@ -64,8 +66,8 @@ shuffled_indices = torch.randperm(len(dataset))
 dataset_train = Subset(dataset, shuffled_indices[:int(len(dataset) * args['train_set_size'])])
 dataset_val = Subset(dataset, shuffled_indices[int(len(dataset) * args['train_set_size']):])
 logging.info(f"Hvb dataset loaded")
-# finetune the model
 
+# finetune the model
 train(
     dataset_train=dataset_train,
     dataset_val=dataset_val,
