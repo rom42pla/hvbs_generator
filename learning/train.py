@@ -1,5 +1,6 @@
 import gc
 import logging
+from copy import deepcopy
 from datetime import datetime
 from os import makedirs
 from os.path import join
@@ -36,6 +37,7 @@ model: pl.LightningModule = HvbGenerator(
     use_masking=True, mask_perc_min=0.1, mask_perc_max=0.3,
     mix_fourier_with_tokens=True,
 )
+initial_weights = deepcopy(model.state_dict().__str__())
 
 # splits the dataset into training and validation
 shuffled_indices = torch.randperm(len(dataset))
@@ -49,6 +51,10 @@ logs = train(
     model=model,
     **args
 )
+assert initial_weights != model.state_dict().__str__(), \
+        f"model not updating"
+for _ in range(8):
+    print(model.generate())
 
 # frees some memory
 del dataset
