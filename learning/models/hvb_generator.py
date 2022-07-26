@@ -240,18 +240,24 @@ class HvbGenerator(pl.LightningModule):
         return optimizer
 
     def generate(self):
-        tokens = torch.as_tensor(
-            [self.vocabulary["[CLS]"]],
-            device=self.device
-        ).repeat(1, 1)
+        # tokens = torch.as_tensor(
+        #     [self.vocabulary[self.start_token],
+        #      self.vocabulary[self.end_token]],
+        #     device=self.device
+        # ).repeat(1, 1)
+        tokens = []
         for _ in range(20):
-            next_token = self(tokens)[:, -1]
+            next_token = self(tokens=torch.as_tensor([
+                self.vocabulary[self.start_token],
+                *tokens,
+                self.vocabulary[self.end_token]
+            ], device=self.device).repeat(1, 1))[:, -1]
             next_token = F.softmax(next_token, dim=-1)
             next_token = torch.argmax(next_token, dim=-1)
-            if next_token.detach().item() == self.vocabulary["[SEP]"]:
+            next_token = next_token.detach().item()
+            if next_token == self.vocabulary["[SEP]"]:
                 break
-            tokens = torch.cat([tokens, next_token.repeat(1, 1)], dim=-1)
-        tokens = tokens.squeeze(0)[1:].detach().tolist()
+            tokens += [next_token]
         tokens = [self.vocabulary_reversed[token_id]
                   for token_id in tokens]
         # merges the tokens
@@ -293,14 +299,13 @@ if __name__ == "__main__":
     with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:
         dataloader = DataLoader(squad_train, batch_size=8)
         for b in dataloader:
-            print(b["context"].shape)
-            exit()
             model.training_step(b, 0)
+            break
     print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=8))
 
-    with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:
-        dataloader = DataLoader(dataset, batch_size=64)
-        model.training_step(next(iter(dataloader)), 0)
-    print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=8))
+    # with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:
+    #     dataloader = DataLoader(dataset, batch_size=64)
+    #     model.training_step(next(iter(dataloader)), 0)
+    # print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=8))
     for _ in range(4):
         print(model.generate())
