@@ -243,10 +243,10 @@ class HvbGenerator(pl.LightningModule):
         loss = F.cross_entropy(input=pred_tokens,
                                target=gt_tokens,
                                label_smoothing=0.1 if phase == "train" else 0.0,
-                               ignore_index=self.vocabulary[self.pad_token])
+                               ignore_index=self.classification_bindings[self.pad_token])
         f1 = torchmetrics.functional.f1_score(preds=pred_tokens,
                                               target=gt_tokens,
-                                              ignore_index=self.vocabulary[self.pad_token],
+                                              ignore_index=self.classification_bindings[self.pad_token],
                                               average="micro")
         del pred_tokens, gt_tokens
         gc.collect()
