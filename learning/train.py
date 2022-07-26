@@ -89,8 +89,8 @@ train(
 assert initial_weights != model.state_dict().__str__(), \
     f"model not updating"
 
-for _ in range(8):
-    print(model.generate())
+for i in range(8):
+    print(f"sentence {i}:", model.generate())
 
 # frees some memory
 del dataset
