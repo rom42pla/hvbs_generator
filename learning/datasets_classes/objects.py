@@ -19,6 +19,7 @@ import einops
 import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 import seaborn as sns
+from transformers import BertTokenizerFast
 
 from learning.datasets_classes.table_dataset import RPGTableDataset
 
@@ -44,6 +45,14 @@ class RPGObjectDataset(RPGTableDataset):
             }]
         # assert all([len(v) == len(data["names"]) for k, v in data.items()])
         return data
+
+    def get_used_tokens(self, tokenizer: BertTokenizerFast) -> List[str]:
+        tokens = set()
+        for item in self.data_raw:
+            for key in item.keys():
+                if isinstance(item[key], str):
+                    tokens = tokens.union(set(tokenizer.tokenize(item[key])))
+        return list(tokens)
 
 
 if __name__ == "__main__":

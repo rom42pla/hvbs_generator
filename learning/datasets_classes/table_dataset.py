@@ -36,7 +36,7 @@ class RPGTableDataset(Dataset, ABC):
         assert exists(vocab_path)
         self.vocab_path: str = vocab_path
         self.data_raw: List[Dict[str, str]] = self.load_data()
-        self.tokenizer = BertTokenizerFast(self.vocab_path, lowercase=True)
+        # self.tokenizer = BertTokenizerFast(self.vocab_path, lowercase=True)
 
         # tokenizer = BertWordPieceTokenizer("bert-base-uncased-vocab.txt", lowercase=True)
         assert isinstance(max_length, int) and max_length >= 1
@@ -47,16 +47,17 @@ class RPGTableDataset(Dataset, ABC):
         return len(self.data_raw)
 
     def __getitem__(self, i: int) -> Dict[str, torch.Tensor]:
-        item_encoded = {}
-        for key, sentence in self.data_raw[i].items():
-            sentence_ids = torch.as_tensor(
-                self.tokenizer.encode(sentence,
-                                      padding="max_length", max_length=self.max_length, truncation=True),
-                dtype=torch.long)
-            # sentence_tokenized = self.tokenizer.tokenize(sentence, add_special_tokens=True)
-            # assert len(sentence_tokenized) == len(sentence_ids)
-            item_encoded[key] = sentence_ids
-        return item_encoded
+        # item_encoded = {}
+        # for key, sentence in self.data_raw[i].items():
+        #     sentence_ids = torch.as_tensor(
+        #         self.tokenizer.encode(sentence,
+        #                               padding="max_length", max_length=self.max_length, truncation=True),
+        #         dtype=torch.long)
+        #     # sentence_tokenized = self.tokenizer.tokenize(sentence, add_special_tokens=True)
+        #     # assert len(sentence_tokenized) == len(sentence_ids)
+        #     item_encoded[key] = sentence_ids
+        # return item_encoded
+        return self.data_raw[i]
 
     @abstractmethod
     def load_data(self) -> List[Dict[str, str]]:

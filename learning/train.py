@@ -4,13 +4,15 @@ from copy import deepcopy
 from datetime import datetime
 from os import makedirs
 from os.path import join
-from pprint import pformat
+from pprint import pformat, pprint
 from typing import Union, Dict
 import torch
 from torch.utils.data import Subset
 import pytorch_lightning as pl
 
 # sets up the loggers
+from transformers import BertTokenizerFast
+
 from learning.arg_parsers.train import get_args
 from learning.datasets_classes.objects import RPGObjectDataset
 from learning.datasets_classes.squad import SQUADDataset
@@ -33,11 +35,21 @@ squad_train = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-train.jso
 squad_test = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-test.json"),
                           vocab_path=join("learning", "datasets_classes", "vocab.txt"),
                           max_length=args['max_sentences_length'])
-logging.info(f"SQUAD dataset loaded")
+# logging.info(f"SQUAD dataset loaded")
 
+dataset = RPGObjectDataset(path=join("learning", "datasets", "oggetti_magici.csv"),
+                           vocab_path=join("learning", "datasets_classes", "vocab.txt"),
+                           max_length=args['max_sentences_length'])
+tokenizer = BertTokenizerFast(join("learning", "datasets_classes", "vocab.txt"), lowercase=True)
+tokens = dataset.get_used_tokens(tokenizer=tokenizer)
+vocabulary = {v: i for i, v in enumerate(tokens)}
 # sets up the model
 model: pl.LightningModule = HvbGenerator(
-    vocabulary=squad_train.tokenizer.get_vocab(),
+    vocabulary=vocabulary,
+    start_token=tokenizer.cls_token,
+    end_token=tokenizer.sep_token,
+    pad_token=tokenizer.pad_token,
+    unk_token=tokenizer.unk_token,
     embeddings_dim=args['embeddings_dim'],
     num_encoders=args['num_encoders'], num_decoders=args['num_decoders'],
     use_masking=True, mask_perc_min=0.2, mask_perc_max=0.3,
@@ -47,16 +59,16 @@ model: pl.LightningModule = HvbGenerator(
 initial_weights = deepcopy(model.state_dict().__str__())
 
 # pre-trains the model
-train(
-    dataset_train=squad_train,
-    dataset_val=squad_test,
-    model=model,
-    **args
-)
-assert initial_weights != model.state_dict().__str__(), \
-    f"model not updating"
-for _ in range(8):
-    print(model.generate())
+# train(
+#     dataset_train=squad_train,
+#     dataset_val=squad_test,
+#     model=model,
+#     **args
+# )
+# assert initial_weights != model.state_dict().__str__(), \
+#     f"model not updating"
+# for _ in range(8):
+#     print(model.generate())
 
 initial_weights = deepcopy(model.state_dict().__str__())
 dataset = RPGObjectDataset(path=join("learning", "datasets", "oggetti_magici.csv"),

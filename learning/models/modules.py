@@ -16,12 +16,6 @@ class FouriEncoder(nn.Module):
                  num_encoders: int = 6,
                  dropout_p: float = 0.1,
 
-                 use_masking: bool = True,
-                 mask_perc_min: float = 0.05,
-                 mask_perc_max: float = 0.15,
-                 mask_start_index: int = 0,
-
-                 add_positional_embeddings: bool = True,
                  mix_fourier_with_tokens: bool = True,
                  ):
         super().__init__()
@@ -36,32 +30,10 @@ class FouriEncoder(nn.Module):
         assert 0 <= dropout_p < 1, \
             f"dropout must be in [0, 1], not {dropout_p}"
         self.dropout_p = dropout_p
-        assert isinstance(add_positional_embeddings, bool)
-        self.add_positional_embeddings = add_positional_embeddings
         assert isinstance(mix_fourier_with_tokens, bool)
         self.mix_fourier_with_tokens = mix_fourier_with_tokens
 
-        # masking
-        assert isinstance(use_masking, bool)
-        self.use_masking = use_masking
-        if self.use_masking is True:
-            assert isinstance(mask_perc_min, float) and 0 <= mask_perc_min < 1
-            assert isinstance(mask_perc_max, float) and 0 <= mask_perc_max < 1 and mask_perc_max >= mask_perc_min
-            self.mask_perc_max, self.mask_perc_min = mask_perc_max, mask_perc_min
-            assert isinstance(mask_start_index, int) and mask_start_index >= 0
-            self.mask_start_index = mask_start_index
-        else:
-            self.mask_perc_max, self.mask_perc_min = None, None
-            self.mask_start_index = 0
-
-        # special tokens dict
-        self.special_tokens = {
-            token: i_token
-            for i_token, token in enumerate(["[start]", "[end]", "[mask]"])
-        }
-
         # architecture
-        self.tokens_embedder = nn.Embedding(len(self.special_tokens), self.embeddings_dim)
         self.encoder_blocks = nn.Sequential(OrderedDict([*[(f"enc_{i}",
                                                             FouriEncoderBlock(in_features=self.embeddings_dim,
                                                                               mid_features=self.embeddings_dim,
@@ -69,9 +41,6 @@ class FouriEncoder(nn.Module):
                                                                               dropout_p=self.dropout_p,
                                                                               mix_fourier_with_tokens=self.mix_fourier_with_tokens))
                                                            for i in range(self.num_encoders)],
-                                                         ("pooler", nn.Linear(in_features=self.embeddings_dim,
-                                                                              out_features=self.embeddings_dim)),
-                                                         ("act", nn.SELU()),
                                                          ]))
 
     def forward(self, x: torch.Tensor):
@@ -83,56 +52,13 @@ class FouriEncoder(nn.Module):
             x = einops.rearrange(x, "s c -> () s c")
         input_shape = x.shape
 
-        # generates special tokens
-        if self.use_masking:
-            mask_token = self.tokens_embedder(torch.as_tensor([
-                self.special_tokens["[mask]"],
-            ], device=x.device))[0]
-        if self.add_positional_embeddings:
-            start_token, end_token = self.tokens_embedder(torch.as_tensor([
-                self.special_tokens["[start]"],
-                self.special_tokens["[end]"],
-            ], device=x.device))
-
-        # eventually adds masking
-        if self.training and self.use_masking:
-            mask_rand = torch.rand((x.shape[0], x[:, self.mask_start_index:].shape[1]),
-                                   dtype=x.dtype, device=x.device)
-            mask = (mask_rand >= self.mask_perc_min) * (mask_rand <= self.mask_perc_max)
-            if x.shape[1] != mask.shape[1]:
-                mask = torch.cat(
-                    [torch.zeros(mask.shape[0], self.mask_start_index, dtype=torch.bool, device=mask.device),
-                     mask], dim=1)
-            x[mask] = mask_token
-
-        # adds start and end token
-        if self.add_positional_embeddings:
-            x = torch.cat([start_token.repeat(x.shape[0], 1, 1),
-                           x,
-                           end_token.repeat(x.shape[0], 1, 1)], dim=1)
-        x[:, self.mask_start_index:] = self.add_positional_embeddings_fn(x[:, self.mask_start_index:])
-
         # encoders pass
         x = self.encoder_blocks(x)
-        if self.add_positional_embeddings:
-            x = x[:, 1:-1]
 
         if not is_batched:
             x = einops.rearrange(x, "b s c -> (b s) c")
         assert x.shape == input_shape, \
             f"output shape {x.shape} is different from input shape {input_shape}"
-        return x
-
-    @staticmethod
-    def add_positional_embeddings_fn(x: torch.Tensor):
-        sequence_length, embeddings_dim = x.shape[-2], x.shape[-1]
-        pe = torch.zeros(sequence_length, embeddings_dim, device=x.device)
-        position = torch.arange(0, sequence_length, device=x.device).unsqueeze(1)
-        div_term = torch.exp((torch.arange(0, embeddings_dim, 2, dtype=torch.float, device=x.device) *
-                              -(math.log(10000.0) / embeddings_dim)))
-        pe[:, 0::2] = torch.sin(position.float() * div_term)
-        pe[:, 1::2] = torch.cos(position.float() * div_term)
-        x = x + pe
         return x
 
 
@@ -188,12 +114,6 @@ class FouriDecoder(nn.Module):
                  num_decoders: int = 6,
                  dropout_p: float = 0.1,
 
-                 use_masking: bool = True,
-                 mask_perc_min: float = 0.05,
-                 mask_perc_max: float = 0.15,
-                 mask_start_index: int = 0,
-
-                 add_positional_embeddings: bool = True,
                  mix_fourier_with_tokens: bool = True,
                  num_heads: int = 4,
                  ):
@@ -209,40 +129,11 @@ class FouriDecoder(nn.Module):
         assert 0 <= dropout_p < 1, \
             f"dropout must be in [0, 1], not {dropout_p}"
         self.dropout_p = dropout_p
-        assert isinstance(add_positional_embeddings, bool)
-        self.add_positional_embeddings = add_positional_embeddings
         assert isinstance(mix_fourier_with_tokens, bool)
         self.mix_fourier_with_tokens = mix_fourier_with_tokens
         assert isinstance(num_heads, int) and num_heads >= 1
         self.num_heads: int = num_heads
 
-        # masking
-        assert isinstance(use_masking, bool)
-        self.use_masking = use_masking
-        if self.use_masking is True:
-            assert isinstance(mask_perc_min, float) and 0 <= mask_perc_min < 1
-            assert isinstance(mask_perc_max, float) and 0 <= mask_perc_max < 1 and mask_perc_max >= mask_perc_min
-            self.mask_perc_max, self.mask_perc_min = mask_perc_max, mask_perc_min
-            assert isinstance(mask_start_index, int) and mask_start_index >= 0
-            self.mask_start_index = mask_start_index
-        else:
-            self.mask_perc_max, self.mask_perc_min = None, None
-            self.mask_start_index = 0
-
-        # special tokens dict
-        special_tokens_list = []
-        if self.use_masking:
-            special_tokens_list += ["[mask]"]
-        if self.add_positional_embeddings:
-            special_tokens_list += ["[start]", "[end]"]
-        self.special_tokens = {
-            token: i_token
-            for i_token, token in enumerate(special_tokens_list)
-        }
-
-        # architecture
-        if len(self.special_tokens) >= 1:
-            self.tokens_embedder = nn.Embedding(len(self.special_tokens), self.embeddings_dim)
         self.decoder_blocks = nn.ModuleList(
             [FouriDecoderBlock(in_features=self.embeddings_dim,
                                mid_features=self.embeddings_dim,
@@ -251,11 +142,11 @@ class FouriDecoder(nn.Module):
                                mix_fourier_with_tokens=self.mix_fourier_with_tokens,
                                num_heads=self.num_heads)
              for _ in range(self.num_decoders)])
-        self.postprocessing = nn.Sequential(OrderedDict([
-            ("pooler", nn.Linear(in_features=self.embeddings_dim,
-                                 out_features=self.embeddings_dim)),
-            ("act", nn.SELU()),
-        ]))
+        # self.postprocessing = nn.Sequential(OrderedDict([
+        #     ("pooler", nn.Linear(in_features=self.embeddings_dim,
+        #                          out_features=self.embeddings_dim)),
+        #     ("act", nn.SELU()),
+        # ]))
 
     def forward(self, x_encoder: torch.Tensor, x_decoder: torch.Tensor):
         # prepares the input
@@ -270,40 +161,9 @@ class FouriDecoder(nn.Module):
             x_decoder = einops.rearrange(x_decoder, "s c -> () s c")
         input_shape = x_decoder.shape
 
-        # generates special tokens
-        if self.use_masking:
-            mask_token = self.tokens_embedder(torch.as_tensor([
-                self.special_tokens["[mask]"],
-            ], device=x_decoder.device))[0]
-        if self.add_positional_embeddings:
-            start_token, end_token = self.tokens_embedder(torch.as_tensor([
-                self.special_tokens["[start]"],
-                self.special_tokens["[end]"],
-            ], device=x_decoder.device))
-
-        # eventually adds masking
-        if self.training and self.use_masking:
-            mask_rand = torch.rand((x_decoder.shape[0], x_decoder[:, self.mask_start_index:].shape[1]),
-                                   dtype=x_decoder.dtype, device=x_decoder.device)
-            mask = (mask_rand >= self.mask_perc_min) * (mask_rand <= self.mask_perc_max)
-            if x_decoder.shape[1] != mask.shape[1]:
-                mask = torch.cat(
-                    [torch.zeros(mask.shape[0], self.mask_start_index, dtype=torch.bool, device=mask.device),
-                     mask], dim=1)
-            x_decoder[mask] = mask_token
-
-        # adds start and end token and eventually adds positional embeddings
-        if self.add_positional_embeddings:
-            x_decoder = torch.cat([start_token.repeat(x_decoder.shape[0], 1, 1),
-                                   x_decoder,
-                                   end_token.repeat(x_decoder.shape[0], 1, 1)], dim=1)
-        x_decoder[:, self.mask_start_index:] = self.add_positional_embeddings_fn(x_decoder[:, self.mask_start_index:])
-
         # decoders pass
         for decoder_block in self.decoder_blocks:
             x_decoder = decoder_block(x_encoder=x_encoder, x_decoder=x_decoder)
-        if self.add_positional_embeddings:
-            x_decoder = x_decoder[:, 1:-1]
         # x_decoder = self.postprocessing(x_decoder)
 
         if not is_batched:
@@ -311,18 +171,6 @@ class FouriDecoder(nn.Module):
         assert x_decoder.shape == input_shape, \
             f"output shape {x_decoder.shape} is different from input shape {input_shape}"
         return x_decoder
-
-    @staticmethod
-    def add_positional_embeddings_fn(x: torch.Tensor):
-        sequence_length, embeddings_dim = x.shape[-2], x.shape[-1]
-        pe = torch.zeros(sequence_length, embeddings_dim, device=x.device)
-        position = torch.arange(0, sequence_length, device=x.device).unsqueeze(1)
-        div_term = torch.exp((torch.arange(0, embeddings_dim, 2, dtype=torch.float, device=x.device) *
-                              -(math.log(10000.0) / embeddings_dim)))
-        pe[:, 0::2] = torch.sin(position.float() * div_term)
-        pe[:, 1::2] = torch.cos(position.float() * div_term)
-        x = x + pe
-        return x
 
 
 class FouriDecoderBlock(nn.Module):
