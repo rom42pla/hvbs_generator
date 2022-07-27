@@ -138,10 +138,6 @@ class HvbGenerator(pl.LightningModule):
             ("linear", nn.Linear(in_features=self.embeddings_dim,
                                  out_features=len(self.vocabulary))),
         ]))
-        # self.nsp_classification = nn.Sequential(OrderedDict([
-        #     ("linear", nn.Linear(in_features=self.embeddings_dim,
-        #                          out_features=2)),
-        # ]))
 
         self.float()
         assert device is None or device in {"cuda", "cpu"}
@@ -190,7 +186,6 @@ class HvbGenerator(pl.LightningModule):
         # print("names_decoded", names_decoded.shape)
         with profiler.record_function("classification"):
             pred_tokens = self.reconstruction(tokens)[:, :-2]
-            # nsp_labels = self.nsp_classification(tokens[:, 0])
 
         gc.collect()
         return pred_tokens
@@ -244,7 +239,7 @@ class HvbGenerator(pl.LightningModule):
         # retrieves the labels
         gt_tokens = ids.clone()
         # applies masking
-        # ids = self.apply_mask(ids)
+        ids = self.apply_mask(ids)
         # del ids_preceding, ids_next, ids_not_next
         # makes the prediction
         pred_tokens = self(ids)
@@ -269,8 +264,7 @@ class HvbGenerator(pl.LightningModule):
         # metas
         phase: str = "train" if self.training is True else "val"
         # tokenizes the data
-        for t in [self.tokenizer, self.tokenizer_reconstruction]:
-            t.enable_padding(
+        self.tokenizer.enable_padding(
                 direction="right",
                 pad_token=self.pad_token,
                 pad_id=self.vocabulary[self.pad_token],
@@ -283,16 +277,7 @@ class HvbGenerator(pl.LightningModule):
             for key in ['preceding', 'next', 'not_next']
         ]
         assert ids_preceding.shape == ids_next.shape == ids_not_next.shape
-        # ids_preceding_rec, ids_next_rec, ids_not_next_rec = [
-        #     torch.as_tensor([token.ids[:self.max_sentence_length]
-        #                      for token in self.tokenizer_reconstruction.encode_batch(batch[key])],
-        #                     device=self.device, dtype=torch.long)
-        #     for key in ['preceding', 'next', 'not_next']
-        # ]
-        # assert ids_preceding_rec.shape == ids_next_rec.shape == ids_not_next_rec.shape
-        # assert ids_preceding_rec.shape == ids_preceding.shape
-        for t in [self.tokenizer, self.tokenizer_reconstruction]:
-            t.no_padding()
+        self.tokenizer.no_padding()
         batch_size = ids_preceding.shape[0]
         # retrieves the labels
         gt_nsp_labels = torch.cat([
@@ -377,7 +362,7 @@ class HvbGenerator(pl.LightningModule):
         # logs
         for metric in outputs[0].keys():
             self.log(f"{metric}_{phase}", torch.stack([e[metric].detach().cpu() for e in outputs]).mean(),
-                     prog_bar=True)
+                     prog_bar=False if "loss" in metric and phase == "train" else True)
 
     def optimizer_zero_grad(self, epoch, batch_idx, optimizer, optimizer_idx):
         optimizer.zero_grad(set_to_none=True)
@@ -440,6 +425,7 @@ class HvbGenerator(pl.LightningModule):
         tokenizer: Tokenizer = Tokenizer(WordPiece(vocab=vocabulary,
                                                    unk_token=self.unk_token,
                                                    max_input_chars_per_word=64))
+        tokenizer.pre_tokenizer = pre_tokenizers.BertPreTokenizer()
         tokenizer.normalizer = BertNormalizer(
             clean_text=False,
             handle_chinese_chars=False,
@@ -490,14 +476,14 @@ if __name__ == "__main__":
                                                                shuffled_indices[int(len(dataset) * 0.2):]))
     print(model)
     with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:
-        dataloader_train = DataLoader(objects_dataset_train, batch_size=32, shuffle=True,
+        dataloader_train = DataLoader(objects_dataset_train, batch_size=16, shuffle=True,
                                       num_workers=os.cpu_count() - 2)
-        dataloader_val = DataLoader(objects_dataset_val, batch_size=32, shuffle=False,
+        dataloader_val = DataLoader(objects_dataset_val, batch_size=16, shuffle=False,
                                     num_workers=os.cpu_count() - 2)
         trainer = pl.Trainer(
             gpus=1 if torch.cuda.is_available() else 0,
             precision=32,
-            max_epochs=100,
+            max_epochs=5,
             check_val_every_n_epoch=1,
             logger=False,
             log_every_n_steps=1,
