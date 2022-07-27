@@ -199,12 +199,11 @@ class HvbGenerator(pl.LightningModule):
                                                 pad_embedding.repeat(tokens_initial.shape[0], 1, 1)],
                                                dim=1)
             tokens = self.decoder(x_encoder=tokens, x_decoder=tokens_initial_shifted)  # (b, s, d)
-            del tokens_initial, tokens_initial_shifted, pad_embedding
         # print("names_decoded", names_decoded.shape)
         with profiler.record_function("classification"):
             pred_tokens = self.reconstruction(tokens)[:, :-2]
             nsp_labels = self.nsp_classification(tokens[:, 0])
-            del tokens
+
         gc.collect()
         return pred_tokens, nsp_labels
 
