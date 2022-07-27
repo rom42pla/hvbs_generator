@@ -159,12 +159,11 @@ class HvbGenerator(pl.LightningModule):
         with profiler.record_function("masking"):
             if self.training and self.use_masking:
                 mask_rand = torch.rand((tokens.shape[0], tokens.shape[1]),
-                                       dtype=torch.float, device=self.device, requires_grad=False)
+                                       dtype=torch.float, device=self.device)
                 mask = (mask_rand >= self.mask_perc_min) * (mask_rand <= self.mask_perc_max)
                 if tokens.shape[1] != mask.shape[1]:
                     mask = torch.cat(
-                        [torch.zeros(mask.shape[0], self.mask_start_index, dtype=torch.bool, device=mask.device,
-                                     requires_grad=False),
+                        [torch.zeros(mask.shape[0], self.mask_start_index, dtype=torch.bool, device=mask.device),
                          mask], dim=1)
                 tokens[mask] = self.vocabulary[self.mask_token]
                 del mask_rand, mask
@@ -267,8 +266,8 @@ class HvbGenerator(pl.LightningModule):
         pred_tokens, pred_nsp_labels = self(tokens)
         # retrieves the labels
         gt_nsp_labels = torch.cat([
-            torch.ones(batch_size, device=self.device, dtype=torch.long, requires_grad=False),
-            torch.zeros(batch_size, device=self.device, dtype=torch.long, requires_grad=False),
+            torch.ones(batch_size, device=self.device, dtype=torch.long),
+            torch.zeros(batch_size, device=self.device, dtype=torch.long),
         ], dim=0)
         gt_tokens = torch.cat([
             tokens[:, 1:],
@@ -414,10 +413,13 @@ class AddGaussianNoise(nn.Module):
         self.strength = strength
 
     def forward(self, x: torch.Tensor):
-        noise = torch.normal(mean=torch.zeros_like(x, device=x.device, requires_grad=False) + x.mean(),
-                             std=torch.zeros_like(x, device=x.device, requires_grad=False) + x.std())
+        noise = torch.normal(mean=torch.zeros_like(x, device=x.device) + x.mean(),
+                             std=torch.zeros_like(x, device=x.device) + x.std())
         noise = noise * self.strength
-        return x + noise
+        x = x + noise
+        del noise
+        gc.collect()
+        return x
 
 
 if __name__ == "__main__":
@@ -433,7 +435,7 @@ if __name__ == "__main__":
                          unk_token=tokenizer.unk_token,
                          num_encoders=2, num_decoders=2,
                          use_masking=True,
-                         mask_perc_min=0.1, mask_perc_max=0.3,
+                         mask_perc_min=0.1, mask_perc_max=0.2,
                          mix_fourier_with_tokens=True)
     model.training = True
     shuffled_indices = torch.randperm(len(dataset))
@@ -450,7 +452,7 @@ if __name__ == "__main__":
         trainer = pl.Trainer(
             gpus=1 if torch.cuda.is_available() else 0,
             precision=32,
-            max_epochs=1,
+            max_epochs=100,
             check_val_every_n_epoch=1,
             logger=False,
             log_every_n_steps=1,
