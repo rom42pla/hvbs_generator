@@ -46,19 +46,6 @@ for dataset in [squad_train, objects_dataset]:
     tokens = tokens.union(set(dataset.get_used_tokens(tokenizer=tokenizer)))
 vocabulary = {v: i for i, v in enumerate(tokens)}
 
-# sets up the model
-# model: pl.LightningModule = HvbGenerator(
-#     vocabulary=vocabulary,
-#     start_token=tokenizer.cls_token,
-#     end_token=tokenizer.sep_token,
-#     pad_token=tokenizer.pad_token,
-#     unk_token=tokenizer.unk_token,
-#     embeddings_dim=args['embeddings_dim'],
-#     num_encoders=args['num_encoders'], num_decoders=args['num_decoders'],
-#     use_masking=True, mask_perc_min=0.2, mask_perc_max=0.3,
-#     noise_strength=args['noise_strength'], dropout_p=args['dropout_p'],
-#     mix_fourier_with_tokens=True,
-# )
 model: GOH_GPT2 = GOH_GPT2(
     vocabulary=vocabulary,
     start_token=tokenizer.cls_token,
@@ -74,16 +61,16 @@ model: GOH_GPT2 = GOH_GPT2(
 initial_weights = deepcopy(model.state_dict().__str__())
 
 # pre-trains the model
-# train(
-#     dataset_train=NextSentencePredictionDataset(squad_train),
-#     dataset_val=NextSentencePredictionDataset(squad_test),
-#     model=model,
-#     **args
-# )
-# assert initial_weights != model.state_dict().__str__(), \
-#     f"model not updating"
-# for _ in range(8):
-#     print(model.generate())
+train(
+    dataset_train=MaskedLanguageModelingDataset(squad_train),
+    dataset_val=MaskedLanguageModelingDataset(squad_test),
+    model=model,
+    **args
+)
+assert initial_weights != model.state_dict().__str__(), \
+    f"model not updating"
+for sentence in model.generate(times=4, starting_string="anello"):
+    print(sentence)
 
 initial_weights = deepcopy(model.state_dict().__str__())
 shuffled_indices = torch.randperm(len(objects_dataset))
