@@ -34,6 +34,7 @@ from learning.datasets_classes.nsp_dataset import NextSentencePredictionDataset
 from learning.datasets_classes.objects import RPGObjectDataset
 from learning.datasets_classes.squad import SQUADDataset
 from learning.models.modules import FouriEncoderBlock, FouriEncoder, FouriDecoder
+from learning.utils import set_global_seed
 
 
 class HvbGenerator(pl.LightningModule):
@@ -422,6 +423,7 @@ class AddGaussianNoise(nn.Module):
 
 
 if __name__ == "__main__":
+    set_global_seed(42)
     dataset = RPGObjectDataset(path=join("..", "datasets", "oggetti_magici.csv"),
                                max_length=32)
     tokenizer = BertTokenizerFast(join("..", "datasets_classes", "vocab.txt"), lowercase=True)
@@ -444,7 +446,7 @@ if __name__ == "__main__":
                                                                shuffled_indices[int(len(dataset) * 0.2):]))
     print(model)
     with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:
-        dataloader_train = DataLoader(objects_dataset_train, batch_size=64, shuffle=True,
+        dataloader_train = DataLoader(objects_dataset_train, batch_size=32, shuffle=True,
                                       num_workers=os.cpu_count() - 2)
         dataloader_val = DataLoader(objects_dataset_val, batch_size=64, shuffle=False,
                                     num_workers=os.cpu_count() - 2)

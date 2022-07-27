@@ -42,6 +42,11 @@ class FouriEncoder(nn.Module):
                                                                               mix_fourier_with_tokens=self.mix_fourier_with_tokens))
                                                            for i in range(self.num_encoders)],
                                                          ]))
+        self.postprocessing = nn.Sequential(OrderedDict([
+            ("pooler", nn.Linear(in_features=self.embeddings_dim,
+                                 out_features=self.embeddings_dim)),
+            ("act", nn.SELU()),
+        ]))
 
     def forward(self, x: torch.Tensor):
         # prepares the input
@@ -54,6 +59,7 @@ class FouriEncoder(nn.Module):
 
         # encoders pass
         x = self.encoder_blocks(x)
+        x = self.postprocessing(x)
 
         if not is_batched:
             x = einops.rearrange(x, "b s c -> (b s) c")
@@ -142,11 +148,11 @@ class FouriDecoder(nn.Module):
                                mix_fourier_with_tokens=self.mix_fourier_with_tokens,
                                num_heads=self.num_heads)
              for _ in range(self.num_decoders)])
-        # self.postprocessing = nn.Sequential(OrderedDict([
-        #     ("pooler", nn.Linear(in_features=self.embeddings_dim,
-        #                          out_features=self.embeddings_dim)),
-        #     ("act", nn.SELU()),
-        # ]))
+        self.postprocessing = nn.Sequential(OrderedDict([
+            ("pooler", nn.Linear(in_features=self.embeddings_dim,
+                                 out_features=self.embeddings_dim)),
+            ("act", nn.SELU()),
+        ]))
 
     def forward(self, x_encoder: torch.Tensor, x_decoder: torch.Tensor):
         # prepares the input
@@ -164,7 +170,7 @@ class FouriDecoder(nn.Module):
         # decoders pass
         for decoder_block in self.decoder_blocks:
             x_decoder = decoder_block(x_encoder=x_encoder, x_decoder=x_decoder)
-        # x_decoder = self.postprocessing(x_decoder)
+        x_decoder = self.postprocessing(x_decoder)
 
         if not is_batched:
             x_decoder = einops.rearrange(x_decoder, "b s c -> (b s) c")
