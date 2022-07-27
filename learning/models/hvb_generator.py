@@ -166,6 +166,7 @@ class HvbGenerator(pl.LightningModule):
                         [torch.zeros(mask.shape[0], self.mask_start_index, dtype=torch.bool, device=mask.device),
                          mask], dim=1)
                 tokens[mask] = self.vocabulary[self.mask_token]
+            del mask_rand, mask
 
         with profiler.record_function("embeddings"):
             # retrieves the embeddings
@@ -198,11 +199,13 @@ class HvbGenerator(pl.LightningModule):
                                                 pad_embedding.repeat(tokens_initial.shape[0], 1, 1)],
                                                dim=1)
             tokens = self.decoder(x_encoder=tokens, x_decoder=tokens_initial_shifted)  # (b, s, d)
+            del tokens_initial, tokens_initial_shifted, pad_embedding
         # print("names_decoded", names_decoded.shape)
         with profiler.record_function("classification"):
             pred_tokens = self.reconstruction(tokens)[:, :-2]
             nsp_labels = self.nsp_classification(tokens[:, 0])
-
+            del tokens
+        gc.collect()
         return pred_tokens, nsp_labels
 
     @staticmethod
@@ -215,6 +218,8 @@ class HvbGenerator(pl.LightningModule):
         pe[:, 0::2] = torch.sin(position.float() * div_term)
         pe[:, 1::2] = torch.cos(position.float() * div_term)
         x = x + pe
+        del pe, position, div_term
+        gc.collect()
         return x
 
     def training_step(self, batch, batch_idx):
@@ -240,31 +245,33 @@ class HvbGenerator(pl.LightningModule):
             for key in ['preceding', 'next', 'not_next']
         ]
         assert ids_preceding.shape == ids_next.shape == ids_not_next.shape
+        batch_size = ids_preceding.shape[0]
         self.tokenizer.no_padding()
         tokens = torch.cat([
             torch.cat([
                 ids_preceding,
                 torch.as_tensor([self.vocabulary[self.end_token]],
-                                device=self.device).repeat(ids_preceding.shape[0], 1),
+                                device=self.device).repeat(batch_size, 1),
                 ids_next,
             ], dim=-1),
             torch.cat([
                 ids_preceding,
                 torch.as_tensor([self.vocabulary[self.end_token]],
-                                device=self.device).repeat(ids_preceding.shape[0], 1),
+                                device=self.device).repeat(batch_size, 1),
                 ids_not_next,
             ], dim=-1)
         ], dim=0)
+        del ids_preceding, ids_next, ids_not_next
         # makes the prediction
         pred_tokens, pred_nsp_labels = self(tokens)
         # retrieves the labels
         gt_nsp_labels = torch.cat([
-            torch.ones(ids_preceding.shape[0], device=self.device, dtype=torch.long),
-            torch.zeros(ids_preceding.shape[0], device=self.device, dtype=torch.long),
+            torch.ones(batch_size, device=self.device, dtype=torch.long),
+            torch.zeros(batch_size, device=self.device, dtype=torch.long),
         ], dim=0)
         gt_tokens = torch.cat([
             tokens[:, 1:],
-            torch.as_tensor([self.vocabulary[self.pad_token]], device=self.device).repeat(tokens.shape[0], 1)
+            torch.as_tensor([self.vocabulary[self.pad_token]], device=self.device).repeat(batch_size * 2, 1)
         ], dim=-1)
         for value in gt_tokens.unique():
             value = value.detach().item()
