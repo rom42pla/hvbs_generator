@@ -29,6 +29,7 @@ from torch.profiler import profile, ProfilerActivity
 from torch.utils.data import DataLoader, Subset
 from torchaudio import transforms
 from transformers import BertTokenizerFast, PreTrainedTokenizerFast, PreTrainedTokenizer
+from transformers import AutoTokenizer, AutoModel
 
 from learning.datasets_classes.mlm_dataset import MaskedLanguageModelingDataset
 from learning.datasets_classes.nsp_dataset import NextSentencePredictionDataset
@@ -49,8 +50,6 @@ class HvbGenerator(pl.LightningModule):
                  max_sentence_length: int = 32,
 
                  embeddings_dim: int = 512,
-                 num_encoders: int = 1,
-                 num_decoders: int = 1,
                  dropout_p: Union[int, float] = 0.25,
 
                  learning_rate: float = 0.002,
@@ -60,7 +59,6 @@ class HvbGenerator(pl.LightningModule):
                  mask_perc_max: float = 0.2,
                  noise_strength: float = 0.1,
 
-                 mix_fourier_with_tokens: bool = True,
 
                  device: Optional[str] = None):
         super().__init__()
@@ -86,10 +84,6 @@ class HvbGenerator(pl.LightningModule):
         self.max_sentence_length = max_sentence_length
         self.tokenizer = self.get_tokenizer(vocabulary=vocabulary)
 
-        # preprocessing
-        assert isinstance(mix_fourier_with_tokens, bool)
-        self.mix_fourier_with_tokens = mix_fourier_with_tokens
-
         # regularization
         assert isinstance(use_masking, bool)
         self.use_masking = use_masking
@@ -104,11 +98,6 @@ class HvbGenerator(pl.LightningModule):
         assert noise_strength >= 0
         self.noise_strength = noise_strength
 
-        # model architecture
-        assert isinstance(num_encoders, int) and num_encoders >= 1
-        self.num_encoders: int = num_encoders
-        assert isinstance(num_decoders, int) and num_decoders >= 1
-        self.num_decoders = num_decoders
         assert isinstance(embeddings_dim, int) and embeddings_dim >= 1
         self.embeddings_dim = embeddings_dim
 
@@ -116,32 +105,13 @@ class HvbGenerator(pl.LightningModule):
         assert isinstance(learning_rate, float) and learning_rate > 0
         self.learning_rate = learning_rate
 
-        self.tokens_embedder = nn.Embedding(len(self.vocabulary), self.embeddings_dim)
-        self.add_noise = nn.Sequential(
-            AddGaussianNoise(strength=self.noise_strength)
-        )
-
-        self.encoder = FouriEncoder(
-            embeddings_dim=self.embeddings_dim,
-            num_encoders=self.num_encoders,
-            dropout_p=self.dropout_p,
-            mix_fourier_with_tokens=self.mix_fourier_with_tokens,
-        )
-        # self.decoder = FouriDecoder(
-        #     embeddings_dim=self.embeddings_dim,
-        #     num_decoders=self.num_decoders,
-        #     dropout_p=self.dropout_p,
-        #     mix_fourier_with_tokens=self.mix_fourier_with_tokens,
-        # )
+        self.gpt2 = AutoModel.from_pretrained("GroNLP/gpt2-small-italian")
+        self.gpt2.wte = nn.Embedding(len(self.vocabulary), 768)
 
         self.reconstruction = nn.Sequential(OrderedDict([
-            ("linear", nn.Linear(in_features=self.embeddings_dim,
+            ("linear", nn.Linear(in_features=768,
                                  out_features=len(self.vocabulary))),
         ]))
-        # self.nsp_classification = nn.Sequential(OrderedDict([
-        #     ("linear", nn.Linear(in_features=self.embeddings_dim,
-        #                          out_features=2)),
-        # ]))
 
         self.float()
         assert device is None or device in {"cuda", "cpu"}
@@ -165,32 +135,20 @@ class HvbGenerator(pl.LightningModule):
                                 device=self.device).repeat(tokens.shape[0], 1),
             ], dim=-1)
             # retrieves the embeddings
-            tokens_initial = self.tokens_embedder(tokens)
-            tokens = tokens_initial.clone()
-            if self.training:
-                tokens = self.add_noise(tokens)
-            # adds positional embeddings
-            tokens = self.add_positional_embeddings_fn(tokens)  # (b, s, d)
+            # tokens_initial = self.tokens_embedder(tokens)
+            # tokens = tokens_initial.clone()
+            # if self.training:
+            #     tokens = self.add_noise(tokens)
+            # # adds positional embeddings
+            # tokens = self.add_positional_embeddings_fn(tokens)  # (b, s, d)
 
-        with profiler.record_function("encoder"):
-            tokens = self.encoder(tokens)  # (b, s, d)
-
-        # print("names_encoded", names_encoded.shape)
-        # with profiler.record_function("decoder"):
-        #     tokens_initial = self.add_positional_embeddings_fn(tokens_initial)
-        #     # shifts the tokens to the right
-        #     pad_embedding = self.tokens_embedder(torch.as_tensor([self.vocabulary[self.pad_token]],
-        #                                                          device=self.device))
-        #     tokens_initial_shifted = torch.cat([tokens_initial[:, 0:1],
-        #                                         tokens_initial[:, 2:],
-        #                                         pad_embedding.repeat(tokens_initial.shape[0], 1, 1)],
-        #                                        dim=1)
-        #     tokens = self.decoder(x_encoder=tokens, x_decoder=tokens_initial_shifted)  # (b, s, d)
+        with profiler.record_function("gpt2"):
+            tokens = self.gpt2(tokens).last_hidden_state[:, 1:-1] # (b, s, d)
+            print(tokens.shape)
 
         # print("names_decoded", names_decoded.shape)
         with profiler.record_function("classification"):
-            pred_tokens = self.reconstruction(tokens)[:, :-2]
-            # nsp_labels = self.nsp_classification(tokens[:, 0])
+            pred_tokens = self.reconstruction(tokens)
 
         gc.collect()
         return pred_tokens
@@ -478,10 +436,8 @@ if __name__ == "__main__":
                          end_token=tokenizer.sep_token,
                          pad_token=tokenizer.pad_token,
                          unk_token=tokenizer.unk_token,
-                         num_encoders=6,
                          use_masking=True,
-                         mask_perc_min=0.1, mask_perc_max=0.2,
-                         mix_fourier_with_tokens=True)
+                         mask_perc_min=0.1, mask_perc_max=0.2)
     model.training = True
     shuffled_indices = torch.randperm(len(dataset))
     objects_dataset_train = MaskedLanguageModelingDataset(Subset(dataset,
@@ -490,9 +446,9 @@ if __name__ == "__main__":
                                                                shuffled_indices[int(len(dataset) * 0.2):]))
     print(model)
     with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:
-        dataloader_train = DataLoader(objects_dataset_train, batch_size=32, shuffle=True,
+        dataloader_train = DataLoader(objects_dataset_train, batch_size=16, shuffle=True,
                                       num_workers=os.cpu_count() - 2)
-        dataloader_val = DataLoader(objects_dataset_val, batch_size=32, shuffle=False,
+        dataloader_val = DataLoader(objects_dataset_val, batch_size=16, shuffle=False,
                                     num_workers=os.cpu_count() - 2)
         trainer = pl.Trainer(
             gpus=1 if torch.cuda.is_available() else 0,
