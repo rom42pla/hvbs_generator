@@ -54,8 +54,8 @@ class HvbGenerator(pl.LightningModule):
                  learning_rate: float = 0.002,
 
                  use_masking: bool = True,
-                 mask_perc_min: float = 0.2,
-                 mask_perc_max: float = 0.3,
+                 mask_perc_min: float = 0.1,
+                 mask_perc_max: float = 0.2,
                  noise_strength: float = 0.1,
 
                  mix_fourier_with_tokens: bool = True,
@@ -68,13 +68,17 @@ class HvbGenerator(pl.LightningModule):
                                                      for k, v in vocabulary.items()])
         self.vocabulary = vocabulary
         assert isinstance(start_token, str) and isinstance(end_token, str) \
-               and isinstance(pad_token, str) and isinstance(unk_token, str) and isinstance(mask_token, str)
+               and isinstance(pad_token, str) and isinstance(unk_token, str) and isinstance(mask_token, str) \
+               and sorted(list(self.vocabulary.values())) == list(range(len(self.vocabulary)))
         self.start_token, self.end_token = start_token, end_token
         self.pad_token, self.unk_token, self.mask_token = pad_token, unk_token, mask_token
-        self.vocabulary.update({
-            t: len(self.vocabulary) + i
-            for i, t in enumerate([self.start_token, self.end_token, self.pad_token, self.unk_token, self.mask_token])
-        })
+        for i, t in enumerate([self.start_token, self.end_token, self.pad_token, self.unk_token, self.mask_token]):
+            if t in self.vocabulary:
+                continue
+            self.vocabulary.update({
+                t: len(self.vocabulary)
+            })
+        assert sorted(list(self.vocabulary.values())) == list(range(len(self.vocabulary)))
         self.vocabulary_reversed = {v: k for k, v in self.vocabulary.items()}
         self.classification_bindings = {i: k for i, k in enumerate([k for k in self.vocabulary.keys()
                                                                     if k not in {self.start_token, self.mask_token}])}
@@ -344,7 +348,9 @@ class HvbGenerator(pl.LightningModule):
 
     def predict_next_token(self, previous_tokens: List[str]):
         previous_tokens = [self.start_token] + previous_tokens
+        was_training: bool = self.training
         with torch.no_grad():
+            self.training = False
             tokens = torch.as_tensor([token.ids
                                       for token in self.tokenizer.encode_batch(previous_tokens)],
                                      device=self.device)
@@ -368,6 +374,8 @@ class HvbGenerator(pl.LightningModule):
         pred_next_token_id = F.softmax(pred_next_token_id, dim=0)
         pred_next_token_id = torch.argmax(pred_next_token_id, dim=0).detach().item()
         pred_next_token = self.classification_bindings[pred_next_token_id]
+        if was_training:
+            self.training = True
         return pred_next_token
 
     def get_tokenizer(self) -> Tokenizer:
@@ -433,8 +441,7 @@ if __name__ == "__main__":
         trainer = pl.Trainer(
             gpus=1 if torch.cuda.is_available() else 0,
             precision=32,
-            min_epochs=2,
-            max_epochs=2,
+            max_epochs=1000,
             check_val_every_n_epoch=1,
             logger=False,
             log_every_n_steps=1,

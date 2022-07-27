@@ -82,6 +82,10 @@ def get_args() -> Dict[str, Union[bool, str, int, float]]:
                         default=1e-3,
                         type=float,
                         help="Learning rate of the model")
+    parser.add_argument("--disable_early_stop",
+                        default=False,
+                        action="store_true",
+                        help="Whether to disable early stopping")
 
     args = parser.parse_args()
 

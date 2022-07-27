@@ -39,10 +39,9 @@ def init_logger() -> None:
         datefmt='%Y-%m-%d %H:%M:%S')
 
 
-def init_callbacks(swa: bool = False) -> List[Callback]:
+def init_callbacks(swa: bool = False,
+                   early_stop: bool = True) -> List[Callback]:
     callbacks: List[Callback] = [
-        EarlyStopping(monitor="loss_val", mode="min", min_delta=1e-3, patience=5,
-                      verbose=False, check_on_train_epoch_end=False, strict=True),
         RichProgressBar(
             theme=RichProgressBarTheme(
                 description="green_yellow",
@@ -59,6 +58,11 @@ def init_callbacks(swa: bool = False) -> List[Callback]:
     if swa:
         callbacks += [
             StochasticWeightAveraging(),
+        ]
+    if early_stop:
+        callbacks += [
+            EarlyStopping(monitor="loss_val", mode="min", min_delta=1e-3, patience=10,
+                          verbose=False, check_on_train_epoch_end=False, strict=True),
         ]
     return callbacks
 
@@ -78,6 +82,7 @@ def train(
         auto_lr_finder: bool = False,
         gradient_clipping: bool = False,
         stochastic_weight_average: bool = False,
+        disable_early_stop: bool = False,
         **kwargs,
 ) -> pd.DataFrame:
     initial_weights = deepcopy(model.state_dict().__str__())
@@ -107,7 +112,8 @@ def train(
         enable_checkpointing=False,
         gradient_clip_val=1 if gradient_clipping else 0,
         auto_lr_find=auto_lr_finder,
-        callbacks=init_callbacks(swa=stochastic_weight_average)
+        callbacks=init_callbacks(swa=stochastic_weight_average,
+                                 early_stop=(not disable_early_stop))
     )
     # eventually selects a starting learning rate
     if auto_lr_finder is True:
