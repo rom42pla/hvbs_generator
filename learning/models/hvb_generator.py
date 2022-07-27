@@ -241,7 +241,7 @@ class HvbGenerator(pl.LightningModule):
         ids_preceding, ids_next, ids_not_next = [
             torch.as_tensor([token.ids[:self.max_sentence_length]
                              for token in self.tokenizer.encode_batch(batch[key])],
-                            device=self.device)
+                            device=self.device, dtype=torch.long)
             for key in ['preceding', 'next', 'not_next']
         ]
         assert ids_preceding.shape == ids_next.shape == ids_not_next.shape
@@ -251,13 +251,13 @@ class HvbGenerator(pl.LightningModule):
             torch.cat([
                 ids_preceding,
                 torch.as_tensor([self.vocabulary[self.end_token]],
-                                device=self.device).repeat(batch_size, 1),
+                                device=self.device, dtype=torch.long).repeat(batch_size, 1),
                 ids_next,
             ], dim=-1),
             torch.cat([
                 ids_preceding,
                 torch.as_tensor([self.vocabulary[self.end_token]],
-                                device=self.device).repeat(batch_size, 1),
+                                device=self.device, dtype=torch.long).repeat(batch_size, 1),
                 ids_not_next,
             ], dim=-1)
         ], dim=0)
@@ -271,7 +271,8 @@ class HvbGenerator(pl.LightningModule):
         ], dim=0)
         gt_tokens = torch.cat([
             tokens[:, 1:],
-            torch.as_tensor([self.vocabulary[self.pad_token]], device=self.device).repeat(batch_size * 2, 1)
+            torch.as_tensor([self.vocabulary[self.pad_token]], device=self.device, dtype=torch.long)
+            .repeat(batch_size * 2, 1)
         ], dim=-1)
         for value in gt_tokens.unique():
             value = value.detach().item()
