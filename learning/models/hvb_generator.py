@@ -139,7 +139,7 @@ class HvbGenerator(pl.LightningModule):
 
         self.reconstruction = nn.Sequential(OrderedDict([
             ("linear", nn.Linear(in_features=self.embeddings_dim,
-                                 out_features=len(self.classification_bindings))),
+                                 out_features=len(self.vocabulary))),
         ]))
         self.nsp_classification = nn.Sequential(OrderedDict([
             ("linear", nn.Linear(in_features=self.embeddings_dim,
@@ -199,6 +199,7 @@ class HvbGenerator(pl.LightningModule):
         return pred_tokens, nsp_labels
 
     def apply_mask(self, x: torch.Tensor):
+        x = x.clone()
         mask_rand = torch.rand((x.shape[0], x.shape[1]),
                                dtype=torch.float, device=x.device)
         mask = (mask_rand >= self.mask_perc_min) * (mask_rand <= self.mask_perc_max)
@@ -247,14 +248,14 @@ class HvbGenerator(pl.LightningModule):
             for key in ['preceding', 'next', 'not_next']
         ]
         assert ids_preceding.shape == ids_next.shape == ids_not_next.shape
-        ids_preceding_rec, ids_next_rec, ids_not_next_rec = [
-            torch.as_tensor([token.ids[:self.max_sentence_length]
-                             for token in self.tokenizer_reconstruction.encode_batch(batch[key])],
-                            device=self.device, dtype=torch.long)
-            for key in ['preceding', 'next', 'not_next']
-        ]
-        assert ids_preceding_rec.shape == ids_next_rec.shape == ids_not_next_rec.shape
-        assert ids_preceding_rec.shape == ids_preceding.shape
+        # ids_preceding_rec, ids_next_rec, ids_not_next_rec = [
+        #     torch.as_tensor([token.ids[:self.max_sentence_length]
+        #                      for token in self.tokenizer_reconstruction.encode_batch(batch[key])],
+        #                     device=self.device, dtype=torch.long)
+        #     for key in ['preceding', 'next', 'not_next']
+        # ]
+        # assert ids_preceding_rec.shape == ids_next_rec.shape == ids_not_next_rec.shape
+        # assert ids_preceding_rec.shape == ids_preceding.shape
         for t in [self.tokenizer, self.tokenizer_reconstruction]:
             t.no_padding()
         batch_size = ids_preceding.shape[0]
@@ -265,16 +266,16 @@ class HvbGenerator(pl.LightningModule):
         ], dim=0)
         gt_tokens = torch.cat([
             torch.cat([
-                ids_preceding_rec,
+                ids_preceding,
                 torch.as_tensor([self.vocabulary[self.end_token]],
                                 device=self.device, dtype=torch.long).repeat(batch_size, 1),
-                ids_next_rec,
+                ids_next,
             ], dim=-1),
             torch.cat([
-                ids_preceding_rec,
+                ids_preceding,
                 torch.as_tensor([self.vocabulary[self.end_token]],
                                 device=self.device, dtype=torch.long).repeat(batch_size, 1),
-                ids_not_next_rec,
+                ids_not_next,
             ], dim=-1)
         ], dim=0)
         # applies masking
@@ -306,14 +307,14 @@ class HvbGenerator(pl.LightningModule):
                                    label_smoothing=0.1 if phase == "train" else 0.0)
         loss_mlm = F.cross_entropy(input=pred_tokens,
                                    target=gt_tokens,
-                                   label_smoothing=0.1 if phase == "train" else 0.0,
-                                   ignore_index=self.classification_bindings_reversed[self.pad_token])
+                                   label_smoothing=0.01 if phase == "train" else 0.0,
+                                   ignore_index=self.vocabulary[self.pad_token])
         f1_nsp = torchmetrics.functional.f1_score(preds=pred_nsp_labels,
                                                   target=gt_nsp_labels,
                                                   average="micro")
         f1_mlm = torchmetrics.functional.f1_score(preds=pred_tokens,
                                                   target=gt_tokens,
-                                                  ignore_index=self.classification_bindings_reversed[self.pad_token],
+                                                  ignore_index=self.vocabulary[self.pad_token],
                                                   average="micro")
         del tokens, pred_tokens, gt_nsp_labels, gt_tokens
         gc.collect()
@@ -348,6 +349,9 @@ class HvbGenerator(pl.LightningModule):
                  prog_bar=True)
         self.log(f"f1_mlm_{phase}", torch.stack([e["f1_mlm"].detach().cpu() for e in outputs]).mean(),
                  prog_bar=True)
+        # if phase == "val":
+        #     for _ in range(4):
+        #         print(model.generate())
 
     def optimizer_zero_grad(self, epoch, batch_idx, optimizer, optimizer_idx):
         optimizer.zero_grad(set_to_none=True)
@@ -382,7 +386,6 @@ class HvbGenerator(pl.LightningModule):
             tokens = torch.as_tensor([token.ids
                                       for token in self.tokenizer.encode_batch(previous_tokens)],
                                      device=self.device)
-
             # retrieves the embeddings
             tokens_initial = self.tokens_embedder(tokens)
             tokens = tokens_initial.clone()
@@ -399,9 +402,9 @@ class HvbGenerator(pl.LightningModule):
             # tokens_initial_shifted = self.add_positional_embeddings_fn(tokens_initial_shifted)
             # tokens = self.decoder(x_encoder=tokens, x_decoder=tokens_initial_shifted)  # (b, s, d)
             pred_next_token_id = self.reconstruction(tokens)[0, -1]
-        pred_next_token_id = F.softmax(pred_next_token_id, dim=0)
-        pred_next_token_id = torch.argmax(pred_next_token_id, dim=0).detach().item()
-        pred_next_token = self.classification_bindings[pred_next_token_id]
+            pred_next_token_id = F.softmax(pred_next_token_id, dim=-1)
+            pred_next_token_id = torch.argmax(pred_next_token_id).detach().item()
+            pred_next_token = self.classification_bindings[pred_next_token_id]
         if was_training:
             self.training = True
         return pred_next_token
@@ -417,12 +420,7 @@ class HvbGenerator(pl.LightningModule):
             strip_accents=False,
             lowercase=True,
         )
-        # tokenizer.pre_tokenizer = pre_tokenizers.BertPreTokenizer()
         tokenizer.decoder = decoders.WordPiece()
-        # tokenizer.post_processor = BertProcessing(
-        #     ("[SEP]", tokenizer.token_to_id(self.start_token)),
-        #     ("[CLS]", tokenizer.token_to_id(self.end_token)),
-        # )
         return tokenizer
 
 
