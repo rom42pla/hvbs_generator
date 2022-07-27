@@ -197,8 +197,8 @@ class GOH_GPT2(pl.LightningModule):
             pad_id=self.vocabulary[self.pad_token],
             length=self.max_sentence_length,
         )
-        # tokens = [token.tokens
-        #           for token in self.tokenizer.encode_batch(batch)]
+        tokens = [token.tokens
+                  for token in self.tokenizer.encode_batch(batch)]
         ids = torch.as_tensor([token.ids[:self.max_sentence_length]
                                for token in self.tokenizer.encode_batch(batch)],
                               device=self.device, dtype=torch.long)
@@ -253,9 +253,14 @@ class GOH_GPT2(pl.LightningModule):
                                       lr=self.learning_rate)
         return optimizer
 
-    def generate(self, times: int = 3, max_length: int = 32):
+    def generate(self, times: int = 3, max_length: int = 32, starting_string: str = ""):
+        starting_string_encoded = [self.vocabulary[self.start_token], *self.tokenizer.encode(starting_string).ids]
+
         sample_outputs = self.causal_model.generate(
-            torch.as_tensor([self.vocabulary[self.start_token]], device=self.device).repeat(1, 1),
+            torch.as_tensor(starting_string_encoded, device=self.device).unsqueeze(0),
+            bos_token_id=self.vocabulary[self.start_token],
+            eos_token_id=self.vocabulary[self.end_token],
+            pad_token_id=self.vocabulary[self.pad_token],
             do_sample=True,
             max_length=max_length,
             top_k=50,
@@ -267,7 +272,7 @@ class GOH_GPT2(pl.LightningModule):
             # decodes the output
             sample_output = sample_output.detach().tolist()
             sentence_list = [self.vocabulary_reversed[token_id]
-                             for token_id in sample_output]
+                             for token_id in starting_string_encoded[1:] + sample_output]
             # adjusts the sentence
             sentence_string = ""
             for token in sentence_list:
@@ -358,5 +363,5 @@ if __name__ == "__main__":
         # trainer.fit(model=model, train_dataloaders=dataloader_train, val_dataloaders=dataloader_val)
     print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=16))
 
-    for sentence in model.generate(times=4):
+    for sentence in model.generate(times=4, starting_string="Anello"):
         print(sentence)

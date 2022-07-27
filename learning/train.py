@@ -59,7 +59,7 @@ vocabulary = {v: i for i, v in enumerate(tokens)}
 #     noise_strength=args['noise_strength'], dropout_p=args['dropout_p'],
 #     mix_fourier_with_tokens=True,
 # )
-model: pl.LightningModule = GOH_GPT2(
+model: GOH_GPT2 = GOH_GPT2(
     vocabulary=vocabulary,
     start_token=tokenizer.cls_token,
     end_token=tokenizer.sep_token,
@@ -101,7 +101,7 @@ train(
 assert initial_weights != model.state_dict().__str__(), \
     f"model not updating"
 
-for sentence in model.generate(times=4):
+for sentence in model.generate(times=4, starting_string="anello"):
     print(sentence)
 
 # frees some memory
