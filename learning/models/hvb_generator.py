@@ -178,16 +178,17 @@ class HvbGenerator(pl.LightningModule):
             tokens = self.encoder(tokens)  # (b, s, d)
 
         # print("names_encoded", names_encoded.shape)
-        with profiler.record_function("decoder"):
-            tokens_initial = self.add_positional_embeddings_fn(tokens_initial)
-            # shifts the tokens to the right
-            pad_embedding = self.tokens_embedder(torch.as_tensor([self.vocabulary[self.pad_token]],
-                                                                 device=self.device))
-            tokens_initial_shifted = torch.cat([tokens_initial[:, 0:1],
-                                                tokens_initial[:, 2:],
-                                                pad_embedding.repeat(tokens_initial.shape[0], 1, 1)],
-                                               dim=1)
-            tokens = self.decoder(x_encoder=tokens, x_decoder=tokens_initial_shifted)  # (b, s, d)
+        # with profiler.record_function("decoder"):
+        #     tokens_initial = self.add_positional_embeddings_fn(tokens_initial)
+        #     # shifts the tokens to the right
+        #     pad_embedding = self.tokens_embedder(torch.as_tensor([self.vocabulary[self.pad_token]],
+        #                                                          device=self.device))
+        #     tokens_initial_shifted = torch.cat([tokens_initial[:, 0:1],
+        #                                         tokens_initial[:, 2:],
+        #                                         pad_embedding.repeat(tokens_initial.shape[0], 1, 1)],
+        #                                        dim=1)
+        #     tokens = self.decoder(x_encoder=tokens, x_decoder=tokens_initial_shifted)  # (b, s, d)
+
         # print("names_decoded", names_decoded.shape)
         with profiler.record_function("classification"):
             pred_tokens = self.reconstruction(tokens)[:, :-2]
@@ -311,7 +312,7 @@ class HvbGenerator(pl.LightningModule):
         del tokens, pred_tokens, gt_nsp_labels, gt_tokens
         gc.collect()
         return {
-            "loss": loss_nsp,
+            "loss": loss_nsp + loss_mlm,
             "loss_nsp": loss_nsp,
             "loss_mlm": loss_mlm,
             "f1_nsp": f1_nsp,
