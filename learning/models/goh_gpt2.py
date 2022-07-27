@@ -144,7 +144,6 @@ class GOH_GPT2(pl.LightningModule):
 
         with profiler.record_function("gpt2"):
             tokens = self.gpt2(tokens).last_hidden_state[:, 1:-1] # (b, s, d)
-            print(tokens.shape)
 
         # print("names_decoded", names_decoded.shape)
         with profiler.record_function("classification"):

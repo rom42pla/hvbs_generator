@@ -14,6 +14,7 @@ import pytorch_lightning as pl
 from transformers import BertTokenizerFast
 
 from learning.arg_parsers.train import get_args
+from learning.datasets_classes.mlm_dataset import MaskedLanguageModelingDataset
 from learning.datasets_classes.nsp_dataset import NextSentencePredictionDataset
 from learning.datasets_classes.objects import RPGObjectDataset
 from learning.datasets_classes.squad import SQUADDataset
@@ -90,8 +91,8 @@ objects_dataset_val = Subset(objects_dataset, shuffled_indices[int(len(objects_d
 # finetune the model
 args['learning_rate'] /= 2
 train(
-    dataset_train=NextSentencePredictionDataset(objects_dataset_train),
-    dataset_val=NextSentencePredictionDataset(objects_dataset_val),
+    dataset_train=MaskedLanguageModelingDataset(objects_dataset_train),
+    dataset_val=MaskedLanguageModelingDataset(objects_dataset_val),
     model=model,
     **args
 )
