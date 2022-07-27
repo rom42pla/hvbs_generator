@@ -298,7 +298,7 @@ class HvbGenerator(pl.LightningModule):
         del tokens, pred_tokens, gt_nsp_labels, gt_tokens
         gc.collect()
         return {
-            "loss": loss_mlm + loss_nsp,
+            "loss": loss_nsp,
             "loss_nsp": loss_nsp,
             "loss_mlm": loss_mlm,
             "f1_nsp": f1_nsp,
