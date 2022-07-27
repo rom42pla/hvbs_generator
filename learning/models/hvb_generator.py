@@ -445,9 +445,9 @@ if __name__ == "__main__":
                                                                shuffled_indices[int(len(dataset) * 0.2):]))
     print(model)
     with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:
-        dataloader_train = DataLoader(objects_dataset_train, batch_size=256, shuffle=True,
+        dataloader_train = DataLoader(objects_dataset_train, batch_size=64, shuffle=True,
                                       num_workers=os.cpu_count() - 2)
-        dataloader_val = DataLoader(objects_dataset_val, batch_size=256, shuffle=False,
+        dataloader_val = DataLoader(objects_dataset_val, batch_size=64, shuffle=False,
                                     num_workers=os.cpu_count() - 2)
         trainer = pl.Trainer(
             gpus=1 if torch.cuda.is_available() else 0,
