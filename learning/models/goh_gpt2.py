@@ -39,7 +39,7 @@ from learning.models.modules import FouriEncoderBlock, FouriEncoder, FouriDecode
 from learning.utils import set_global_seed
 
 
-class HvbGenerator(pl.LightningModule):
+class GOH_GPT2(pl.LightningModule):
     def __init__(self,
                  vocabulary: Dict[str, int],
                  start_token: str = "[CLS]",
@@ -431,7 +431,7 @@ if __name__ == "__main__":
     tokenizer = BertTokenizerFast(join("..", "datasets_classes", "vocab.txt"), lowercase=True)
     tokens = dataset.get_used_tokens(tokenizer=tokenizer)
     vocabulary = {v: i for i, v in enumerate(tokens)}
-    model = HvbGenerator(embeddings_dim=512, vocabulary=vocabulary,
+    model = GOH_GPT2(embeddings_dim=512, vocabulary=vocabulary,
                          start_token=tokenizer.cls_token,
                          end_token=tokenizer.sep_token,
                          pad_token=tokenizer.pad_token,

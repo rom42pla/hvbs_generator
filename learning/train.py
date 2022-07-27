@@ -17,6 +17,7 @@ from learning.arg_parsers.train import get_args
 from learning.datasets_classes.nsp_dataset import NextSentencePredictionDataset
 from learning.datasets_classes.objects import RPGObjectDataset
 from learning.datasets_classes.squad import SQUADDataset
+from learning.models.goh_gpt2 import GOH_GPT2
 from learning.models.hvb_generator import HvbGenerator
 from learning.utils import init_logger, set_global_seed, train
 
@@ -45,17 +46,27 @@ for dataset in [squad_train, objects_dataset]:
 vocabulary = {v: i for i, v in enumerate(tokens)}
 
 # sets up the model
-model: pl.LightningModule = HvbGenerator(
+# model: pl.LightningModule = HvbGenerator(
+#     vocabulary=vocabulary,
+#     start_token=tokenizer.cls_token,
+#     end_token=tokenizer.sep_token,
+#     pad_token=tokenizer.pad_token,
+#     unk_token=tokenizer.unk_token,
+#     embeddings_dim=args['embeddings_dim'],
+#     num_encoders=args['num_encoders'], num_decoders=args['num_decoders'],
+#     use_masking=True, mask_perc_min=0.2, mask_perc_max=0.3,
+#     noise_strength=args['noise_strength'], dropout_p=args['dropout_p'],
+#     mix_fourier_with_tokens=True,
+# )
+model: pl.LightningModule = GOH_GPT2(
     vocabulary=vocabulary,
     start_token=tokenizer.cls_token,
     end_token=tokenizer.sep_token,
     pad_token=tokenizer.pad_token,
     unk_token=tokenizer.unk_token,
     embeddings_dim=args['embeddings_dim'],
-    num_encoders=args['num_encoders'], num_decoders=args['num_decoders'],
     use_masking=True, mask_perc_min=0.2, mask_perc_max=0.3,
     noise_strength=args['noise_strength'], dropout_p=args['dropout_p'],
-    mix_fourier_with_tokens=True,
 )
 initial_weights = deepcopy(model.state_dict().__str__())
 
