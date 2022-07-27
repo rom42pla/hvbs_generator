@@ -169,6 +169,14 @@ class HvbGenerator(pl.LightningModule):
                 del mask_rand, mask
 
         with profiler.record_function("embeddings"):
+            # adds [CLS] and [SEP] tokens for the decoder
+            tokens = torch.cat([
+                torch.as_tensor([self.vocabulary[self.start_token]],
+                                device=self.device).repeat(tokens.shape[0], 1),
+                tokens,
+                torch.as_tensor([self.vocabulary[self.end_token]],
+                                device=self.device).repeat(tokens.shape[0], 1),
+            ], dim=-1)
             # retrieves the embeddings
             tokens_initial = self.tokens_embedder(tokens)
             tokens = tokens_initial.clone()
@@ -182,14 +190,6 @@ class HvbGenerator(pl.LightningModule):
 
         # print("names_encoded", names_encoded.shape)
         with profiler.record_function("decoder"):
-            # adds [CLS] and [SEP] tokens for the decoder
-            tokens_initial = torch.cat([
-                self.tokens_embedder(torch.as_tensor([self.vocabulary[self.start_token]],
-                                                     device=self.device).repeat(tokens_initial.shape[0], 1)),
-                tokens_initial,
-                self.tokens_embedder(torch.as_tensor([self.vocabulary[self.end_token]],
-                                                     device=self.device).repeat(tokens_initial.shape[0], 1)),
-            ], dim=1)
             tokens_initial = self.add_positional_embeddings_fn(tokens_initial)
             # shifts the tokens to the right
             pad_embedding = self.tokens_embedder(torch.as_tensor([self.vocabulary[self.pad_token]],
