@@ -47,28 +47,30 @@ for dataset in [squad_train, objects_dataset]:
 vocabulary = {v: i for i, v in enumerate(tokens)}
 
 # sets up the model
-model: pl.LightningModule = HvbGenerator(
-    vocabulary=vocabulary,
-    start_token=tokenizer.cls_token,
-    end_token=tokenizer.sep_token,
-    pad_token=tokenizer.pad_token,
-    unk_token=tokenizer.unk_token,
-    embeddings_dim=args['embeddings_dim'],
-    num_encoders=args['num_encoders'], num_decoders=args['num_decoders'],
-    use_masking=True, mask_perc_min=0.2, mask_perc_max=0.3,
-    noise_strength=args['noise_strength'], dropout_p=args['dropout_p'],
-    mix_fourier_with_tokens=True,
-)
-# model: pl.LightningModule = GOH_GPT2(
+# model: pl.LightningModule = HvbGenerator(
 #     vocabulary=vocabulary,
 #     start_token=tokenizer.cls_token,
 #     end_token=tokenizer.sep_token,
 #     pad_token=tokenizer.pad_token,
 #     unk_token=tokenizer.unk_token,
 #     embeddings_dim=args['embeddings_dim'],
+#     num_encoders=args['num_encoders'], num_decoders=args['num_decoders'],
 #     use_masking=True, mask_perc_min=0.2, mask_perc_max=0.3,
 #     noise_strength=args['noise_strength'], dropout_p=args['dropout_p'],
+#     mix_fourier_with_tokens=True,
 # )
+model: pl.LightningModule = GOH_GPT2(
+    vocabulary=vocabulary,
+    start_token=tokenizer.cls_token,
+    end_token=tokenizer.sep_token,
+    pad_token=tokenizer.pad_token,
+    unk_token=tokenizer.unk_token,
+    num_layers=args['num_layers'],
+    num_heads=args['num_heads'],
+    embeddings_dim=args['embeddings_dim'],
+    use_masking=True, mask_perc_min=0.2, mask_perc_max=0.3,
+    noise_strength=args['noise_strength'], dropout_p=args['dropout_p'],
+)
 initial_weights = deepcopy(model.state_dict().__str__())
 
 # pre-trains the model
@@ -99,8 +101,8 @@ train(
 assert initial_weights != model.state_dict().__str__(), \
     f"model not updating"
 
-for i in range(8):
-    print(f"sentence {i}:", model.generate())
+for sentence in model.generate(times=4):
+    print(sentence)
 
 # frees some memory
 del objects_dataset

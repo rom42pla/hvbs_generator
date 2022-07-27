@@ -30,7 +30,7 @@ from torch.profiler import profile, ProfilerActivity
 from torch.utils.data import DataLoader, Subset
 from torchaudio import transforms
 from transformers import BertTokenizerFast, PreTrainedTokenizerFast, PreTrainedTokenizer, GPT2Model, GPT2Config, \
-    BartForConditionalGeneration
+    BartForConditionalGeneration, T5Config, T5ForConditionalGeneration
 from transformers import AutoTokenizer, AutoModel
 
 from learning.datasets_classes.mlm_dataset import MaskedLanguageModelingDataset
@@ -52,6 +52,8 @@ class GOH_GPT2(pl.LightningModule):
                  max_sentence_length: int = 32,
 
                  embeddings_dim: int = 512,
+                 num_layers: int = 4,
+                 num_heads: int = 4,
                  dropout_p: Union[int, float] = 0.25,
 
                  learning_rate: float = 0.002,
@@ -101,33 +103,27 @@ class GOH_GPT2(pl.LightningModule):
 
         assert isinstance(embeddings_dim, int) and embeddings_dim >= 1
         self.embeddings_dim = embeddings_dim
+        assert isinstance(num_layers, int) and num_layers >= 1
+        assert isinstance(num_heads, int) and num_heads >= 1
+        self.num_layers: int = num_layers
+        self.num_heads: int = num_heads
 
         # optimization
         assert isinstance(learning_rate, float) and learning_rate > 0
         self.learning_rate = learning_rate
 
-        # self.gpt2 = AutoModel.from_pretrained("GroNLP/gpt2-small-italian")
-        # self.gpt2.wte = nn.Embedding(len(self.vocabulary), 768)
-
-        self.gpt2: BartForConditionalGeneration = BartForConditionalGeneration(transformers.BartConfig(
+        self.causal_model = T5ForConditionalGeneration(T5Config(
             vocab_size=len(self.vocabulary),
             max_position_embeddings=self.embeddings_dim,
             d_model=self.embeddings_dim,
-            encoder_layers=2,
-            decoder_layers=2,
-            encoder_attention_heads=4,
-            decoder_attention_heads=4,
-            encoder_ffn_dim=self.embeddings_dim,
-            decoder_ffn_dim=self.embeddings_dim,
-            encoder_layerdrop=self.dropout_p,
-            decoder_layerdrop=self.dropout_p,
-            dropout=self.dropout_p,
-            activation_dropout=self.dropout_p,
-            attention_dropout=self.dropout_p,
-            classifier_dropout=self.dropout_p,
+            d_kv=self.embeddings_dim,
+            d_ff=self.embeddings_dim,
+            num_layers=self.num_layers,
+            num_heads=self.num_heads,
+            dropout_rate=self.dropout_p,
             pad_token_id=self.vocabulary[self.pad_token],
-            bos_token_id=self.vocabulary[self.start_token],
             eos_token_id=self.vocabulary[self.end_token],
+            bos_token_id=self.vocabulary[self.start_token],
         ))
 
         self.float()
@@ -152,9 +148,10 @@ class GOH_GPT2(pl.LightningModule):
                                 device=self.device).repeat(tokens.shape[0], 1),
             ], dim=-1)
         with profiler.record_function("gpt2"):
-            pred_tokens = self.gpt2(tokens)  # (b, s, d)
-            print(pred_tokens)
-            exit()
+            pred_tokens = self.causal_model(input_ids=tokens,
+                                            decoder_input_ids=torch.cat([tokens[:, :1],
+                                                                         tokens[:, 2:-1]], dim=-1)).logits  # (b, s, d)
+
         gc.collect()
         return pred_tokens
 
@@ -185,12 +182,12 @@ class GOH_GPT2(pl.LightningModule):
         return x
 
     def training_step(self, batch, batch_idx):
-        return self.step_mlm(batch=batch, batch_idx=batch_idx)
+        return self.step(batch=batch, batch_idx=batch_idx)
 
     def validation_step(self, batch, batch_idx):
-        return self.step_mlm(batch=batch, batch_idx=batch_idx)
+        return self.step(batch=batch, batch_idx=batch_idx)
 
-    def step_mlm(self, batch, batch_idx):
+    def step(self, batch, batch_idx):
         # metas
         phase: str = "train" if self.training is True else "val"
         # tokenizes the data
@@ -230,102 +227,6 @@ class GOH_GPT2(pl.LightningModule):
             "f1_mlm": f1_mlm,
         }
 
-    def step_nsp(self, batch, batch_idx):
-        # metas
-        phase: str = "train" if self.training is True else "val"
-        # tokenizes the data
-        for t in [self.tokenizer, self.tokenizer_reconstruction]:
-            t.enable_padding(
-                direction="right",
-                pad_token=self.pad_token,
-                pad_id=self.vocabulary[self.pad_token],
-                length=self.max_sentence_length,
-            )
-        ids_preceding, ids_next, ids_not_next = [
-            torch.as_tensor([token.ids[:self.max_sentence_length]
-                             for token in self.tokenizer.encode_batch(batch[key])],
-                            device=self.device, dtype=torch.long)
-            for key in ['preceding', 'next', 'not_next']
-        ]
-        assert ids_preceding.shape == ids_next.shape == ids_not_next.shape
-        # ids_preceding_rec, ids_next_rec, ids_not_next_rec = [
-        #     torch.as_tensor([token.ids[:self.max_sentence_length]
-        #                      for token in self.tokenizer_reconstruction.encode_batch(batch[key])],
-        #                     device=self.device, dtype=torch.long)
-        #     for key in ['preceding', 'next', 'not_next']
-        # ]
-        # assert ids_preceding_rec.shape == ids_next_rec.shape == ids_not_next_rec.shape
-        # assert ids_preceding_rec.shape == ids_preceding.shape
-        for t in [self.tokenizer, self.tokenizer_reconstruction]:
-            t.no_padding()
-        batch_size = ids_preceding.shape[0]
-        # retrieves the labels
-        gt_nsp_labels = torch.cat([
-            torch.ones(batch_size, device=self.device, dtype=torch.long),
-            torch.zeros(batch_size, device=self.device, dtype=torch.long),
-        ], dim=0)
-        gt_tokens = torch.cat([
-            torch.cat([
-                ids_preceding,
-                torch.as_tensor([self.vocabulary[self.end_token]],
-                                device=self.device, dtype=torch.long).repeat(batch_size, 1),
-                ids_next,
-            ], dim=-1),
-            torch.cat([
-                ids_preceding,
-                torch.as_tensor([self.vocabulary[self.end_token]],
-                                device=self.device, dtype=torch.long).repeat(batch_size, 1),
-                ids_not_next,
-            ], dim=-1)
-        ], dim=0)
-        # applies masking
-        ids_preceding, ids_next, ids_not_next = self.apply_mask(ids_preceding), \
-                                                self.apply_mask(ids_next), \
-                                                self.apply_mask(ids_not_next)
-        tokens = torch.cat([
-            torch.cat([
-                ids_preceding,
-                torch.as_tensor([self.vocabulary[self.end_token]],
-                                device=self.device, dtype=torch.long).repeat(batch_size, 1),
-                ids_next,
-            ], dim=-1),
-            torch.cat([
-                ids_preceding,
-                torch.as_tensor([self.vocabulary[self.end_token]],
-                                device=self.device, dtype=torch.long).repeat(batch_size, 1),
-                ids_not_next,
-            ], dim=-1)
-        ], dim=0)
-        # del ids_preceding, ids_next, ids_not_next
-        # makes the prediction
-        pred_tokens, pred_nsp_labels = self(tokens)
-        assert len(tokens) == len(pred_tokens) == len(gt_nsp_labels) == len(gt_tokens)
-        pred_tokens = einops.rearrange(pred_tokens, "b s l -> (b s) l")
-        gt_tokens = einops.rearrange(gt_tokens, "b s -> (b s)")
-        loss_nsp = F.cross_entropy(input=pred_nsp_labels,
-                                   target=gt_nsp_labels,
-                                   label_smoothing=0.1 if phase == "train" else 0.0)
-        loss_mlm = F.cross_entropy(input=pred_tokens,
-                                   target=gt_tokens,
-                                   label_smoothing=0.01 if phase == "train" else 0.0,
-                                   ignore_index=self.vocabulary[self.pad_token])
-        f1_nsp = torchmetrics.functional.f1_score(preds=pred_nsp_labels,
-                                                  target=gt_nsp_labels,
-                                                  average="micro")
-        f1_mlm = torchmetrics.functional.f1_score(preds=pred_tokens,
-                                                  target=gt_tokens,
-                                                  ignore_index=self.vocabulary[self.pad_token],
-                                                  average="micro")
-        del tokens, pred_tokens, gt_nsp_labels, gt_tokens
-        gc.collect()
-        return {
-            "loss": loss_nsp + loss_mlm,
-            "loss_nsp": loss_nsp,
-            "loss_mlm": loss_mlm,
-            "f1_nsp": f1_nsp,
-            "f1_mlm": f1_mlm,
-        }
-
     def training_epoch_end(self, outputs: List[Dict[str, torch.Tensor]]):
         self.log_stats(outputs)
         del outputs
@@ -352,67 +253,36 @@ class GOH_GPT2(pl.LightningModule):
                                       lr=self.learning_rate)
         return optimizer
 
-    def generate(self, max_length: int = 32):
-        print(self.gpt2.generate())
-        exit()
-        sample_outputs = self.gpt2.generate(
-            torch.as_tensor([self.vocabulary[self.pad_token]], device=self.device),
+    def generate(self, times: int = 3, max_length: int = 32):
+        sample_outputs = self.causal_model.generate(
+            torch.as_tensor([self.vocabulary[self.start_token]], device=self.device).repeat(1, 1),
             do_sample=True,
-            max_length=50,
+            max_length=max_length,
             top_k=50,
             top_p=0.95,
-            num_return_sequences=3
+            num_return_sequences=times
         )
-
-        print("Output:\n" + 100 * '-')
+        sentences = []
         for i, sample_output in enumerate(sample_outputs):
-            print("{}: {}".format(i, tokenizer.decode(sample_output, skip_special_tokens=True)))
-        # tokens = []
-        # for _ in range(max_length):
-        #     next_token = self.predict_next_token(previous_tokens=tokens)
-        #     if next_token == self.end_token:
-        #         break
-        #     tokens += [next_token]
-        # # merges the tokens
-        # generated_string = ""
-        # for token in tokens:
-        #     if token.startswith("##"):
-        #         generated_string += token[2:]
-        #     else:
-        #         generated_string += f" {token}"
-        # generated_string = generated_string.strip().capitalize()
-        return generated_string
-
-    def predict_next_token(self, previous_tokens: List[str]):
-        previous_tokens = [self.start_token] + previous_tokens
-        was_training: bool = self.training
-        with torch.no_grad():
-            self.training = False
-            tokens = torch.as_tensor([token.ids
-                                      for token in self.tokenizer.encode_batch(previous_tokens)],
-                                     device=self.device)
-            # retrieves the embeddings
-            tokens_initial = self.tokens_embedder(tokens)
-            tokens = tokens_initial.clone()
-            tokens = self.add_positional_embeddings_fn(tokens)  # (b, s, d)
-            # encoder pass
-            tokens = self.encoder(tokens)  # (b, s, d)
-            # decoder pass
-            # pad_embedding = self.tokens_embedder(torch.as_tensor([self.vocabulary[self.pad_token]],
-            #                                                      device=self.device))
-            # tokens_initial_shifted = torch.cat([tokens_initial[:, 0:1],
-            #                                     tokens_initial[:, 2:],
-            #                                     pad_embedding.repeat(tokens_initial.shape[0], 1, 1)],
-            #                                    dim=1)
-            # tokens_initial_shifted = self.add_positional_embeddings_fn(tokens_initial_shifted)
-            # tokens = self.decoder(x_encoder=tokens, x_decoder=tokens_initial_shifted)  # (b, s, d)
-            pred_next_token_id = self.reconstruction(tokens)[0, -1]
-            pred_next_token_id = F.softmax(pred_next_token_id, dim=-1)
-            pred_next_token_id = torch.argmax(pred_next_token_id).detach().item()
-            pred_next_token = self.classification_bindings[pred_next_token_id]
-        if was_training:
-            self.training = True
-        return pred_next_token
+            # decodes the output
+            sample_output = sample_output.detach().tolist()
+            sentence_list = [self.vocabulary_reversed[token_id]
+                             for token_id in sample_output]
+            # adjusts the sentence
+            sentence_string = ""
+            for token in sentence_list:
+                if token.startswith("##"):
+                    sentence_string += token[2:]
+                elif token in {self.start_token, self.end_token, self.unk_token, self.pad_token}:
+                    continue
+                else:
+                    sentence_string += f" {token}"
+            sentence_string = sentence_string.strip()
+            sentences += [sentence_string]
+        assert len(sentences) == times
+        if times == 1:
+            sentences = sentences[0]
+        return sentences
 
     def get_tokenizer(self, vocabulary: Dict[str, int]) -> Tokenizer:
         os.environ["TOKENIZERS_PARALLELISM"] = "true"
@@ -488,5 +358,5 @@ if __name__ == "__main__":
         # trainer.fit(model=model, train_dataloaders=dataloader_train, val_dataloaders=dataloader_val)
     print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=16))
 
-    for _ in range(4):
-        print(model.generate())
+    for sentence in model.generate(times=4):
+        print(sentence)

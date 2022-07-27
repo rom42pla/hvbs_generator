@@ -40,14 +40,14 @@ def get_args() -> Dict[str, Union[bool, str, int, float]]:
                         help="The size of the training set, in percentage")
 
     # model args
-    parser.add_argument("--num_encoders",
+    parser.add_argument("--num_layers",
                         default=2,
                         type=int,
-                        help="Number of encoders")
-    parser.add_argument("--num_decoders",
-                        default=2,
+                        help="Number of encoders and decoders")
+    parser.add_argument("--num_heads",
+                        default=4,
                         type=int,
-                        help="Number of decoders")
+                        help="Number of heads")
     parser.add_argument("--embeddings_dim",
                         default=128,
                         type=int,
@@ -99,8 +99,8 @@ def get_args() -> Dict[str, Union[bool, str, int, float]]:
     if args.seed is None:
         args.seed = random.randint(0, 1000000)
 
-    assert args.num_encoders >= 1
-    assert args.num_decoders >= 1
+    assert args.num_layers >= 1
+    assert args.num_heads >= 1
     assert 0 <= args.dropout_p < 1
     assert args.noise_strength >= 0
     assert args.learning_rate > 0

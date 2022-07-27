@@ -394,8 +394,11 @@ class HvbGenerator(pl.LightningModule):
         was_training: bool = self.training
         with torch.no_grad():
             self.training = False
+            print(previous_tokens, " ".join(previous_tokens))
+            print([token.ids
+             for token in self.tokenizer.encode_batch([previous_tokens])])
             tokens = torch.as_tensor([token.ids
-                                      for token in self.tokenizer.encode_batch(previous_tokens)],
+                                      for token in self.tokenizer.encode(" ".join(previous_tokens))],
                                      device=self.device)
             # retrieves the embeddings
             tokens_initial = self.tokens_embedder(tokens)
@@ -415,7 +418,7 @@ class HvbGenerator(pl.LightningModule):
             pred_next_token_id = self.reconstruction(tokens)[0, -1]
             pred_next_token_id = F.softmax(pred_next_token_id, dim=-1)
             pred_next_token_id = torch.argmax(pred_next_token_id).detach().item()
-            pred_next_token = self.classification_bindings[pred_next_token_id]
+            pred_next_token = self.vocabulary_reversed[pred_next_token_id]
         if was_training:
             self.training = True
         return pred_next_token
@@ -493,7 +496,7 @@ if __name__ == "__main__":
             gradient_clip_val=1,
             auto_lr_find=False,
         )
-        trainer.fit(model=model, train_dataloaders=dataloader_train, val_dataloaders=dataloader_val)
+        # trainer.fit(model=model, train_dataloaders=dataloader_train, val_dataloaders=dataloader_val)
     print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=16))
 
     for _ in range(4):
