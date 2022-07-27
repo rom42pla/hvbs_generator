@@ -157,18 +157,6 @@ class HvbGenerator(pl.LightningModule):
         if tokens.device != self.device:
             tokens = tokens.to(self.device)
 
-        with profiler.record_function("masking"):
-            if self.training and self.use_masking:
-                mask_rand = torch.rand((tokens.shape[0], tokens.shape[1]),
-                                       dtype=torch.float, device=self.device)
-                mask = (mask_rand >= self.mask_perc_min) * (mask_rand <= self.mask_perc_max)
-                if tokens.shape[1] != mask.shape[1]:
-                    mask = torch.cat(
-                        [torch.zeros(mask.shape[0], self.mask_start_index, dtype=torch.bool, device=mask.device),
-                         mask], dim=1)
-                tokens[mask] = self.vocabulary[self.mask_token]
-                del mask_rand, mask
-
         with profiler.record_function("embeddings"):
             # adds [CLS] and [SEP] tokens for the decoder
             tokens = torch.cat([
@@ -208,6 +196,17 @@ class HvbGenerator(pl.LightningModule):
         gc.collect()
         return pred_tokens, nsp_labels
 
+    def apply_mask(self, x: torch.Tensor):
+        mask_rand = torch.rand((x.shape[0], x.shape[1]),
+                               dtype=torch.float, device=x.device)
+        mask = (mask_rand >= self.mask_perc_min) * (mask_rand <= self.mask_perc_max)
+        if x.shape[1] != mask.shape[1]:
+            mask = torch.cat(
+                [torch.zeros(mask.shape[0], dtype=torch.bool, device=x.device),
+                 mask], dim=1)
+        x[mask] = self.vocabulary[self.mask_token]
+        return x
+
     @staticmethod
     def add_positional_embeddings_fn(x: torch.Tensor):
         sequence_length, embeddings_dim = x.shape[-2], x.shape[-1]
@@ -229,7 +228,7 @@ class HvbGenerator(pl.LightningModule):
         return self.step(batch=batch, batch_idx=batch_idx)
 
     def step(self, batch, batch_idx):
-        # name of the current phase
+        # metas
         phase: str = "train" if self.training is True else "val"
         # tokenizes the data
         self.tokenizer.enable_padding(
@@ -246,6 +245,34 @@ class HvbGenerator(pl.LightningModule):
         ]
         assert ids_preceding.shape == ids_next.shape == ids_not_next.shape
         batch_size = ids_preceding.shape[0]
+        # retrieves the labels
+        gt_nsp_labels = torch.cat([
+            torch.ones(batch_size, device=self.device, dtype=torch.long),
+            torch.zeros(batch_size, device=self.device, dtype=torch.long),
+        ], dim=0)
+        gt_tokens = torch.cat([
+            torch.cat([
+                ids_preceding,
+                torch.as_tensor([self.vocabulary[self.end_token]],
+                                device=self.device, dtype=torch.long).repeat(batch_size, 1),
+                ids_next,
+            ], dim=-1),
+            torch.cat([
+                ids_preceding,
+                torch.as_tensor([self.vocabulary[self.end_token]],
+                                device=self.device, dtype=torch.long).repeat(batch_size, 1),
+                ids_not_next,
+            ], dim=-1)
+        ], dim=0)
+        for value in gt_tokens.unique():
+            value = value.detach().item()
+            classification_binding = self.classification_bindings_reversed[self.vocabulary_reversed[value]]
+            gt_tokens[gt_tokens == value] = classification_binding
+        # applies masking
+        ids_preceding, ids_next, ids_not_next = self.apply_mask(ids_preceding), \
+                                                self.apply_mask(ids_next), \
+                                                self.apply_mask(ids_not_next)
+        # pads and encodes the sequence
         self.tokenizer.no_padding()
         tokens = torch.cat([
             torch.cat([
@@ -264,20 +291,6 @@ class HvbGenerator(pl.LightningModule):
         # del ids_preceding, ids_next, ids_not_next
         # makes the prediction
         pred_tokens, pred_nsp_labels = self(tokens)
-        # retrieves the labels
-        gt_nsp_labels = torch.cat([
-            torch.ones(batch_size, device=self.device, dtype=torch.long),
-            torch.zeros(batch_size, device=self.device, dtype=torch.long),
-        ], dim=0)
-        gt_tokens = torch.cat([
-            tokens[:, 1:],
-            torch.as_tensor([self.vocabulary[self.pad_token]], device=self.device, dtype=torch.long)
-            .repeat(batch_size * 2, 1)
-        ], dim=-1)
-        for value in gt_tokens.unique():
-            value = value.detach().item()
-            classification_binding = self.classification_bindings_reversed[self.vocabulary_reversed[value]]
-            gt_tokens[gt_tokens == value] = classification_binding
         assert len(tokens) == len(pred_tokens) == len(gt_nsp_labels) == len(gt_tokens)
         pred_tokens = einops.rearrange(pred_tokens, "b s l -> (b s) l")
         gt_tokens = einops.rearrange(gt_tokens, "b s -> (b s)")
