@@ -166,7 +166,7 @@ class HvbGenerator(pl.LightningModule):
                         [torch.zeros(mask.shape[0], self.mask_start_index, dtype=torch.bool, device=mask.device),
                          mask], dim=1)
                 tokens[mask] = self.vocabulary[self.mask_token]
-            del mask_rand, mask
+                del mask_rand, mask
 
         with profiler.record_function("embeddings"):
             # retrieves the embeddings
