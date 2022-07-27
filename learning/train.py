@@ -60,16 +60,16 @@ model: pl.LightningModule = HvbGenerator(
 initial_weights = deepcopy(model.state_dict().__str__())
 
 # pre-trains the model
-# train(
-#     dataset_train=NextSentencePredictionDataset(squad_train),
-#     dataset_val=NextSentencePredictionDataset(squad_test),
-#     model=model,
-#     **args
-# )
-# assert initial_weights != model.state_dict().__str__(), \
-#     f"model not updating"
-# for _ in range(8):
-#     print(model.generate())
+train(
+    dataset_train=NextSentencePredictionDataset(squad_train),
+    dataset_val=NextSentencePredictionDataset(squad_test),
+    model=model,
+    **args
+)
+assert initial_weights != model.state_dict().__str__(), \
+    f"model not updating"
+for _ in range(8):
+    print(model.generate())
 
 initial_weights = deepcopy(model.state_dict().__str__())
 shuffled_indices = torch.randperm(len(objects_dataset))
