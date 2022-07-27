@@ -129,12 +129,12 @@ class HvbGenerator(pl.LightningModule):
             dropout_p=self.dropout_p,
             mix_fourier_with_tokens=self.mix_fourier_with_tokens,
         )
-        self.decoder = FouriDecoder(
-            embeddings_dim=self.embeddings_dim,
-            num_decoders=self.num_decoders,
-            dropout_p=self.dropout_p,
-            mix_fourier_with_tokens=self.mix_fourier_with_tokens,
-        )
+        # self.decoder = FouriDecoder(
+        #     embeddings_dim=self.embeddings_dim,
+        #     num_decoders=self.num_decoders,
+        #     dropout_p=self.dropout_p,
+        #     mix_fourier_with_tokens=self.mix_fourier_with_tokens,
+        # )
 
         self.reconstruction = nn.Sequential(OrderedDict([
             ("linear", nn.Linear(in_features=self.embeddings_dim,
@@ -384,14 +384,14 @@ class HvbGenerator(pl.LightningModule):
             # encoder pass
             tokens = self.encoder(tokens)  # (b, s, d)
             # decoder pass
-            pad_embedding = self.tokens_embedder(torch.as_tensor([self.vocabulary[self.pad_token]],
-                                                                 device=self.device))
-            tokens_initial_shifted = torch.cat([tokens_initial[:, 0:1],
-                                                tokens_initial[:, 2:],
-                                                pad_embedding.repeat(tokens_initial.shape[0], 1, 1)],
-                                               dim=1)
-            tokens_initial_shifted = self.add_positional_embeddings_fn(tokens_initial_shifted)
-            tokens = self.decoder(x_encoder=tokens, x_decoder=tokens_initial_shifted)  # (b, s, d)
+            # pad_embedding = self.tokens_embedder(torch.as_tensor([self.vocabulary[self.pad_token]],
+            #                                                      device=self.device))
+            # tokens_initial_shifted = torch.cat([tokens_initial[:, 0:1],
+            #                                     tokens_initial[:, 2:],
+            #                                     pad_embedding.repeat(tokens_initial.shape[0], 1, 1)],
+            #                                    dim=1)
+            # tokens_initial_shifted = self.add_positional_embeddings_fn(tokens_initial_shifted)
+            # tokens = self.decoder(x_encoder=tokens, x_decoder=tokens_initial_shifted)  # (b, s, d)
             pred_next_token_id = self.reconstruction(tokens)[0, -1]
         pred_next_token_id = F.softmax(pred_next_token_id, dim=0)
         pred_next_token_id = torch.argmax(pred_next_token_id, dim=0).detach().item()
