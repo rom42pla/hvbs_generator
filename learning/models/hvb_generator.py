@@ -44,7 +44,7 @@ class HvbGenerator(pl.LightningModule):
                  end_token: str = "[SEP]",
                  unk_token: str = "[UNK]",
                  mask_token: str = "[MASK]",
-                 max_sentence_length: int = 64,
+                 max_sentence_length: int = 32,
 
                  embeddings_dim: int = 512,
                  num_encoders: int = 1,
@@ -159,11 +159,12 @@ class HvbGenerator(pl.LightningModule):
         with profiler.record_function("masking"):
             if self.training and self.use_masking:
                 mask_rand = torch.rand((tokens.shape[0], tokens.shape[1]),
-                                       dtype=torch.float, device=self.device)
+                                       dtype=torch.float, device=self.device, requires_grad=False)
                 mask = (mask_rand >= self.mask_perc_min) * (mask_rand <= self.mask_perc_max)
                 if tokens.shape[1] != mask.shape[1]:
                     mask = torch.cat(
-                        [torch.zeros(mask.shape[0], self.mask_start_index, dtype=torch.bool, device=mask.device),
+                        [torch.zeros(mask.shape[0], self.mask_start_index, dtype=torch.bool, device=mask.device,
+                                     requires_grad=False),
                          mask], dim=1)
                 tokens[mask] = self.vocabulary[self.mask_token]
                 del mask_rand, mask
@@ -266,8 +267,8 @@ class HvbGenerator(pl.LightningModule):
         pred_tokens, pred_nsp_labels = self(tokens)
         # retrieves the labels
         gt_nsp_labels = torch.cat([
-            torch.ones(batch_size, device=self.device, dtype=torch.long),
-            torch.zeros(batch_size, device=self.device, dtype=torch.long),
+            torch.ones(batch_size, device=self.device, dtype=torch.long, requires_grad=False),
+            torch.zeros(batch_size, device=self.device, dtype=torch.long, requires_grad=False),
         ], dim=0)
         gt_tokens = torch.cat([
             tokens[:, 1:],
@@ -449,7 +450,7 @@ if __name__ == "__main__":
         trainer = pl.Trainer(
             gpus=1 if torch.cuda.is_available() else 0,
             precision=32,
-            max_epochs=1000,
+            max_epochs=1,
             check_val_every_n_epoch=1,
             logger=False,
             log_every_n_steps=1,
@@ -460,7 +461,7 @@ if __name__ == "__main__":
             auto_lr_find=False,
         )
         trainer.fit(model=model, train_dataloaders=dataloader_train, val_dataloaders=dataloader_val)
-    print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=8))
+    print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=16))
 
     for _ in range(4):
         print(model.generate())
