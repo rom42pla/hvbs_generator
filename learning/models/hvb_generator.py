@@ -269,9 +269,9 @@ class HvbGenerator(pl.LightningModule):
             classification_binding = self.classification_bindings_reversed[self.vocabulary_reversed[value]]
             gt_tokens[gt_tokens == value] = classification_binding
         # applies masking
-        ids_preceding, ids_next, ids_not_next = self.apply_mask(ids_preceding), \
-                                                self.apply_mask(ids_next), \
-                                                self.apply_mask(ids_not_next)
+        # ids_preceding, ids_next, ids_not_next = self.apply_mask(ids_preceding), \
+        #                                         self.apply_mask(ids_next), \
+        #                                         self.apply_mask(ids_not_next)
         # pads and encodes the sequence
         self.tokenizer.no_padding()
         tokens = torch.cat([
