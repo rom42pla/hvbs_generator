@@ -260,7 +260,7 @@ class HvbGenerator(pl.LightningModule):
                 ids_not_next,
             ], dim=-1)
         ], dim=0)
-        del ids_preceding, ids_next, ids_not_next
+        # del ids_preceding, ids_next, ids_not_next
         # makes the prediction
         pred_tokens, pred_nsp_labels = self(tokens)
         # retrieves the labels
