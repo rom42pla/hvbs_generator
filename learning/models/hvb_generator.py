@@ -86,7 +86,8 @@ class HvbGenerator(pl.LightningModule):
         self.classification_bindings_reversed = {v: k for k, v in self.classification_bindings.items()}
         assert isinstance(max_sentence_length, int) and max_sentence_length >= 1
         self.max_sentence_length = max_sentence_length
-        self.tokenizer = self.get_tokenizer()
+        self.tokenizer = self.get_tokenizer(vocabulary=vocabulary)
+        self.tokenizer_reconstruction = self.get_tokenizer(vocabulary=self.classification_bindings_reversed)
 
         # preprocessing
         assert isinstance(mix_fourier_with_tokens, bool)
@@ -232,12 +233,13 @@ class HvbGenerator(pl.LightningModule):
         # metas
         phase: str = "train" if self.training is True else "val"
         # tokenizes the data
-        self.tokenizer.enable_padding(
-            direction="right",
-            pad_token=self.pad_token,
-            pad_id=self.vocabulary[self.pad_token],
-            length=self.max_sentence_length,
-        )
+        for t in [self.tokenizer, self.tokenizer_reconstruction]:
+            t.enable_padding(
+                direction="right",
+                pad_token=self.pad_token,
+                pad_id=self.vocabulary[self.pad_token],
+                length=self.max_sentence_length,
+            )
         ids_preceding, ids_next, ids_not_next = [
             torch.as_tensor([token.ids[:self.max_sentence_length]
                              for token in self.tokenizer.encode_batch(batch[key])],
@@ -245,6 +247,16 @@ class HvbGenerator(pl.LightningModule):
             for key in ['preceding', 'next', 'not_next']
         ]
         assert ids_preceding.shape == ids_next.shape == ids_not_next.shape
+        ids_preceding_rec, ids_next_rec, ids_not_next_rec = [
+            torch.as_tensor([token.ids[:self.max_sentence_length]
+                             for token in self.tokenizer_reconstruction.encode_batch(batch[key])],
+                            device=self.device, dtype=torch.long)
+            for key in ['preceding', 'next', 'not_next']
+        ]
+        assert ids_preceding_rec.shape == ids_next_rec.shape == ids_not_next_rec.shape
+        assert ids_preceding_rec.shape == ids_preceding.shape
+        for t in [self.tokenizer, self.tokenizer_reconstruction]:
+            t.no_padding()
         batch_size = ids_preceding.shape[0]
         # retrieves the labels
         gt_nsp_labels = torch.cat([
@@ -253,28 +265,22 @@ class HvbGenerator(pl.LightningModule):
         ], dim=0)
         gt_tokens = torch.cat([
             torch.cat([
-                ids_preceding,
+                ids_preceding_rec,
                 torch.as_tensor([self.vocabulary[self.end_token]],
                                 device=self.device, dtype=torch.long).repeat(batch_size, 1),
-                ids_next,
+                ids_next_rec,
             ], dim=-1),
             torch.cat([
-                ids_preceding,
+                ids_preceding_rec,
                 torch.as_tensor([self.vocabulary[self.end_token]],
                                 device=self.device, dtype=torch.long).repeat(batch_size, 1),
-                ids_not_next,
+                ids_not_next_rec,
             ], dim=-1)
         ], dim=0)
-        for value in gt_tokens.unique():
-            value = value.detach().item()
-            classification_binding = self.classification_bindings_reversed[self.vocabulary_reversed[value]]
-            gt_tokens[gt_tokens == value] = classification_binding
         # applies masking
-        # ids_preceding, ids_next, ids_not_next = self.apply_mask(ids_preceding), \
-        #                                         self.apply_mask(ids_next), \
-        #                                         self.apply_mask(ids_not_next)
-        # pads and encodes the sequence
-        self.tokenizer.no_padding()
+        ids_preceding, ids_next, ids_not_next = self.apply_mask(ids_preceding), \
+                                                self.apply_mask(ids_next), \
+                                                self.apply_mask(ids_not_next)
         tokens = torch.cat([
             torch.cat([
                 ids_preceding,
@@ -400,9 +406,9 @@ class HvbGenerator(pl.LightningModule):
             self.training = True
         return pred_next_token
 
-    def get_tokenizer(self) -> Tokenizer:
+    def get_tokenizer(self, vocabulary: Dict[str, int]) -> Tokenizer:
         os.environ["TOKENIZERS_PARALLELISM"] = "true"
-        tokenizer: Tokenizer = Tokenizer(WordPiece(vocab=self.vocabulary,
+        tokenizer: Tokenizer = Tokenizer(WordPiece(vocab=vocabulary,
                                                    unk_token=self.unk_token,
                                                    max_input_chars_per_word=64))
         tokenizer.normalizer = BertNormalizer(
