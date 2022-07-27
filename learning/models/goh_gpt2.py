@@ -197,8 +197,8 @@ class GOH_GPT2(pl.LightningModule):
             pad_id=self.vocabulary[self.pad_token],
             length=self.max_sentence_length,
         )
-        tokens = [token.tokens
-                  for token in self.tokenizer.encode_batch(batch)]
+        # tokens = [token.tokens
+        #           for token in self.tokenizer.encode_batch(batch)]
         ids = torch.as_tensor([token.ids[:self.max_sentence_length]
                                for token in self.tokenizer.encode_batch(batch)],
                               device=self.device, dtype=torch.long)

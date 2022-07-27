@@ -61,7 +61,7 @@ def init_callbacks(swa: bool = False,
         ]
     if early_stop:
         callbacks += [
-            EarlyStopping(monitor="loss_mlm_val", mode="min", min_delta=1e-3, patience=10,
+            EarlyStopping(monitor="loss_mlm_val", mode="min", min_delta=1e-3, patience=5,
                           verbose=False, check_on_train_epoch_end=False, strict=True),
         ]
     return callbacks
