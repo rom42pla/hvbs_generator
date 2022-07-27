@@ -21,10 +21,10 @@ import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from learning.datasets_classes.table_dataset import RPGTableDataset
+from learning.datasets_classes.base_dataset import BaseDataset
 
 
-class SQUADDataset(RPGTableDataset):
+class SQUADDataset(BaseDataset):
 
     def __init__(
             self,
@@ -37,14 +37,18 @@ class SQUADDataset(RPGTableDataset):
             data_raw = json.load(fp)["data"]
         data: List[Dict[str, str]] = []
         for i_page, page in enumerate(data_raw):
-            for i_paragraph, paragraph in enumerate(data_raw[i_page]["paragraphs"]):
-                data += [{
-                    "context": paragraph["context"]
-                }]
+            data += [" ".join([paragraph["context"]
+                               for paragraph in data_raw[i_page]["paragraphs"]])]
         return data
 
 
 if __name__ == "__main__":
     dataset = SQUADDataset(path=join("..", "datasets", "SQuAD_it-train.json"))
-    dataset = SQUADDataset(path=join("..", "datasets", "SQuAD_it-test.json"))
     x = dataset[0]
+    # print(len(dataset))
+    for x in dataset:
+        from nltk.tokenize import sent_tokenize
+
+        print(sent_tokenize(x))
+
+        # pprint(x)

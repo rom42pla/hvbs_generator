@@ -14,6 +14,7 @@ import pytorch_lightning as pl
 from transformers import BertTokenizerFast
 
 from learning.arg_parsers.train import get_args
+from learning.datasets_classes.nsp_dataset import NextSentencePredictionDataset
 from learning.datasets_classes.objects import RPGObjectDataset
 from learning.datasets_classes.squad import SQUADDataset
 from learning.models.hvb_generator import HvbGenerator
@@ -30,19 +31,19 @@ set_global_seed(seed=args['seed'])
 
 # sets up the datasets
 squad_train = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-train.json"),
-                           vocab_path=join("learning", "datasets_classes", "vocab.txt"),
                            max_length=args['max_sentences_length'])
 squad_test = SQUADDataset(path=join("learning", "datasets", "SQuAD_it-test.json"),
-                          vocab_path=join("learning", "datasets_classes", "vocab.txt"),
                           max_length=args['max_sentences_length'])
-# logging.info(f"SQUAD dataset loaded")
+objects_dataset = RPGObjectDataset(path=join("learning", "datasets", "oggetti_magici.csv"),
+                                   max_length=args['max_sentences_length'])
+logging.info(f"datasets loaded")
 
-dataset = RPGObjectDataset(path=join("learning", "datasets", "oggetti_magici.csv"),
-                           vocab_path=join("learning", "datasets_classes", "vocab.txt"),
-                           max_length=args['max_sentences_length'])
 tokenizer = BertTokenizerFast(join("learning", "datasets_classes", "vocab.txt"), lowercase=True)
-tokens = dataset.get_used_tokens(tokenizer=tokenizer)
+tokens = set()
+for dataset in [squad_train, objects_dataset]:
+    tokens = tokens.union(set(dataset.get_used_tokens(tokenizer=tokenizer)))
 vocabulary = {v: i for i, v in enumerate(tokens)}
+
 # sets up the model
 model: pl.LightningModule = HvbGenerator(
     vocabulary=vocabulary,
@@ -59,30 +60,28 @@ model: pl.LightningModule = HvbGenerator(
 initial_weights = deepcopy(model.state_dict().__str__())
 
 # pre-trains the model
-# train(
-#     dataset_train=squad_train,
-#     dataset_val=squad_test,
-#     model=model,
-#     **args
-# )
-# assert initial_weights != model.state_dict().__str__(), \
-#     f"model not updating"
-# for _ in range(8):
-#     print(model.generate())
+train(
+    dataset_train=NextSentencePredictionDataset(squad_train),
+    dataset_val=NextSentencePredictionDataset(squad_test),
+    model=model,
+    **args
+)
+assert initial_weights != model.state_dict().__str__(), \
+    f"model not updating"
+
+for _ in range(8):
+    print(model.generate())
 
 initial_weights = deepcopy(model.state_dict().__str__())
-dataset = RPGObjectDataset(path=join("learning", "datasets", "oggetti_magici.csv"),
-                           vocab_path=join("learning", "datasets_classes", "vocab.txt"),
-                           max_length=args['max_sentences_length'])
-shuffled_indices = torch.randperm(len(dataset))
-dataset_train = Subset(dataset, shuffled_indices[:int(len(dataset) * args['train_set_size'])])
-dataset_val = Subset(dataset, shuffled_indices[int(len(dataset) * args['train_set_size']):])
-logging.info(f"Hvb dataset loaded")
+shuffled_indices = torch.randperm(len(objects_dataset))
+objects_dataset_train = Subset(objects_dataset, shuffled_indices[:int(len(objects_dataset) * args['train_set_size'])])
+objects_dataset_val = Subset(objects_dataset, shuffled_indices[int(len(objects_dataset) * args['train_set_size']):])
 
 # finetune the model
+args['learning_rate'] /= 2
 train(
-    dataset_train=dataset_train,
-    dataset_val=dataset_val,
+    dataset_train=NextSentencePredictionDataset(objects_dataset_train),
+    dataset_val=NextSentencePredictionDataset(objects_dataset_val),
     model=model,
     **args
 )
@@ -93,7 +92,7 @@ for i in range(8):
     print(f"sentence {i}:", model.generate())
 
 # frees some memory
-del dataset
+del objects_dataset
 gc.collect()
 
 # print(logs)

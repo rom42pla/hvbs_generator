@@ -14,6 +14,7 @@ import torchvision
 from einops.layers.torch import Rearrange
 from matplotlib import pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from pytorch_lightning import Trainer
 from tokenizers import pre_tokenizers, decoders, Tokenizer
 from tokenizers.models import WordPiece
 from tokenizers.normalizers import BertNormalizer
@@ -25,10 +26,11 @@ import torchmetrics
 import einops
 import torch.autograd.profiler as profiler
 from torch.profiler import profile, ProfilerActivity
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torchaudio import transforms
 from transformers import BertTokenizerFast, PreTrainedTokenizerFast, PreTrainedTokenizer
 
+from learning.datasets_classes.nsp_dataset import NextSentencePredictionDataset
 from learning.datasets_classes.objects import RPGObjectDataset
 from learning.datasets_classes.squad import SQUADDataset
 from learning.models.modules import FouriEncoderBlock, FouriEncoder, FouriDecoder
@@ -42,7 +44,7 @@ class HvbGenerator(pl.LightningModule):
                  end_token: str = "[SEP]",
                  unk_token: str = "[UNK]",
                  mask_token: str = "[MASK]",
-                 max_sentence_length: int = 32,
+                 max_sentence_length: int = 64,
 
                  embeddings_dim: int = 512,
                  num_encoders: int = 1,
@@ -74,8 +76,9 @@ class HvbGenerator(pl.LightningModule):
             for i, t in enumerate([self.start_token, self.end_token, self.pad_token, self.unk_token, self.mask_token])
         })
         self.vocabulary_reversed = {v: k for k, v in self.vocabulary.items()}
-        self.classification_bindings = {k: i for i, k in enumerate([k for k in self.vocabulary.keys()
+        self.classification_bindings = {i: k for i, k in enumerate([k for k in self.vocabulary.keys()
                                                                     if k not in {self.start_token, self.mask_token}])}
+        self.classification_bindings_reversed = {v: k for k, v in self.classification_bindings.items()}
         assert isinstance(max_sentence_length, int) and max_sentence_length >= 1
         self.max_sentence_length = max_sentence_length
         self.tokenizer = self.get_tokenizer()
@@ -128,9 +131,13 @@ class HvbGenerator(pl.LightningModule):
             mix_fourier_with_tokens=self.mix_fourier_with_tokens,
         )
 
-        self.classification = nn.Sequential(OrderedDict([
+        self.reconstruction = nn.Sequential(OrderedDict([
             ("linear", nn.Linear(in_features=self.embeddings_dim,
                                  out_features=len(self.classification_bindings))),
+        ]))
+        self.nsp_classification = nn.Sequential(OrderedDict([
+            ("linear", nn.Linear(in_features=self.embeddings_dim,
+                                 out_features=2)),
         ]))
 
         self.float()
@@ -140,8 +147,7 @@ class HvbGenerator(pl.LightningModule):
         self.to(device)
         self.save_hyperparameters()
 
-    def forward(self,
-                tokens: torch.Tensor):
+    def forward(self, tokens: torch.Tensor):
         tokens = tokens.clone()
         if tokens.device != self.device:
             tokens = tokens.to(self.device)
@@ -158,12 +164,6 @@ class HvbGenerator(pl.LightningModule):
                 tokens[mask] = self.vocabulary[self.mask_token]
 
         with profiler.record_function("embeddings"):
-            # adds [CLS] and [SEP] tokens
-            tokens = torch.cat([
-                torch.as_tensor([self.vocabulary[self.start_token]], device=self.device).repeat(tokens.shape[0], 1),
-                tokens,
-                torch.as_tensor([self.vocabulary[self.end_token]], device=self.device).repeat(tokens.shape[0], 1),
-            ], dim=-1)
             # retrieves the embeddings
             tokens_initial = self.tokens_embedder(tokens)
             tokens = tokens_initial.clone()
@@ -177,7 +177,16 @@ class HvbGenerator(pl.LightningModule):
 
         # print("names_encoded", names_encoded.shape)
         with profiler.record_function("decoder"):
+            # adds [CLS] and [SEP] tokens for the decoder
+            tokens_initial = torch.cat([
+                self.tokens_embedder(torch.as_tensor([self.vocabulary[self.start_token]],
+                                                     device=self.device).repeat(tokens_initial.shape[0], 1)),
+                tokens_initial,
+                self.tokens_embedder(torch.as_tensor([self.vocabulary[self.end_token]],
+                                                     device=self.device).repeat(tokens_initial.shape[0], 1)),
+            ], dim=1)
             tokens_initial = self.add_positional_embeddings_fn(tokens_initial)
+            # shifts the tokens to the right
             pad_embedding = self.tokens_embedder(torch.as_tensor([self.vocabulary[self.pad_token]],
                                                                  device=self.device))
             tokens_initial_shifted = torch.cat([tokens_initial[:, 0:1],
@@ -185,12 +194,12 @@ class HvbGenerator(pl.LightningModule):
                                                 pad_embedding.repeat(tokens_initial.shape[0], 1, 1)],
                                                dim=1)
             tokens = self.decoder(x_encoder=tokens, x_decoder=tokens_initial_shifted)  # (b, s, d)
-            tokens = tokens[:, 1:-1]
         # print("names_decoded", names_decoded.shape)
         with profiler.record_function("classification"):
-            pred_tokens = self.classification(tokens)
+            pred_tokens = self.reconstruction(tokens)[:, :-2]
+            nsp_labels = self.nsp_classification(tokens[:, 0])
 
-        return pred_tokens
+        return pred_tokens, nsp_labels
 
     @staticmethod
     def add_positional_embeddings_fn(x: torch.Tensor):
@@ -213,11 +222,6 @@ class HvbGenerator(pl.LightningModule):
     def step(self, batch, batch_idx):
         # name of the current phase
         phase: str = "train" if self.training is True else "val"
-        # retrieves the data
-        if "name" in batch.keys():
-            tokens_raw: torch.Tensor = batch["name"]
-        elif "context" in batch.keys():
-            tokens_raw: torch.Tensor = batch["context"]
         # tokenizes the data
         self.tokenizer.enable_padding(
             direction="right",
@@ -225,34 +229,68 @@ class HvbGenerator(pl.LightningModule):
             pad_id=self.vocabulary[self.pad_token],
             length=self.max_sentence_length,
         )
-        tokens = torch.as_tensor([o.ids for o in self.tokenizer.encode_batch(tokens_raw)], device=self.device)
+        ids_preceding, ids_next, ids_not_next = [
+            torch.as_tensor([token.ids[:self.max_sentence_length]
+                             for token in self.tokenizer.encode_batch(batch[key])],
+                            device=self.device)
+            for key in ['preceding', 'next', 'not_next']
+        ]
+        assert ids_preceding.shape == ids_next.shape == ids_not_next.shape
         self.tokenizer.no_padding()
+        tokens = torch.cat([
+            torch.cat([
+                ids_preceding,
+                torch.as_tensor([self.vocabulary[self.end_token]],
+                                device=self.device).repeat(ids_preceding.shape[0], 1),
+                ids_next,
+            ], dim=-1),
+            torch.cat([
+                ids_preceding,
+                torch.as_tensor([self.vocabulary[self.end_token]],
+                                device=self.device).repeat(ids_preceding.shape[0], 1),
+                ids_not_next,
+            ], dim=-1)
+        ], dim=0)
         # makes the prediction
-        pred_tokens = self(tokens)
-        # computes the metrics
+        pred_tokens, pred_nsp_labels = self(tokens)
+        # retrieves the labels
+        gt_nsp_labels = torch.cat([
+            torch.ones(ids_preceding.shape[0], device=self.device, dtype=torch.long),
+            torch.zeros(ids_preceding.shape[0], device=self.device, dtype=torch.long),
+        ], dim=0)
         gt_tokens = torch.cat([
             tokens[:, 1:],
             torch.as_tensor([self.vocabulary[self.pad_token]], device=self.device).repeat(tokens.shape[0], 1)
         ], dim=-1)
         for value in gt_tokens.unique():
             value = value.detach().item()
-            classification_binding = self.classification_bindings[self.vocabulary_reversed[value]]
+            classification_binding = self.classification_bindings_reversed[self.vocabulary_reversed[value]]
             gt_tokens[gt_tokens == value] = classification_binding
+        assert len(tokens) == len(pred_tokens) == len(gt_nsp_labels) == len(gt_tokens)
         pred_tokens = einops.rearrange(pred_tokens, "b s l -> (b s) l")
         gt_tokens = einops.rearrange(gt_tokens, "b s -> (b s)")
-        loss = F.cross_entropy(input=pred_tokens,
-                               target=gt_tokens,
-                               label_smoothing=0.1 if phase == "train" else 0.0,
-                               ignore_index=self.classification_bindings[self.pad_token])
-        f1 = torchmetrics.functional.f1_score(preds=pred_tokens,
-                                              target=gt_tokens,
-                                              ignore_index=self.classification_bindings[self.pad_token],
-                                              average="micro")
-        del pred_tokens, gt_tokens
+        loss_nsp = F.cross_entropy(input=pred_nsp_labels,
+                                   target=gt_nsp_labels,
+                                   label_smoothing=0.1 if phase == "train" else 0.0)
+        loss_mlm = F.cross_entropy(input=pred_tokens,
+                                   target=gt_tokens,
+                                   label_smoothing=0.1 if phase == "train" else 0.0,
+                                   ignore_index=self.classification_bindings_reversed[self.pad_token])
+        f1_nsp = torchmetrics.functional.f1_score(preds=pred_nsp_labels,
+                                                  target=gt_nsp_labels,
+                                                  average="micro")
+        f1_mlm = torchmetrics.functional.f1_score(preds=pred_tokens,
+                                                  target=gt_tokens,
+                                                  ignore_index=self.classification_bindings_reversed[self.pad_token],
+                                                  average="micro")
+        del tokens, pred_tokens, gt_nsp_labels, gt_tokens
         gc.collect()
         return {
-            "loss": loss,
-            "f1": f1,
+            "loss": loss_mlm + loss_nsp,
+            "loss_nsp": loss_nsp,
+            "loss_mlm": loss_mlm,
+            "f1_nsp": f1_nsp,
+            "f1_mlm": f1_mlm,
         }
 
     def training_epoch_end(self, outputs: List[Dict[str, torch.Tensor]]):
@@ -268,14 +306,16 @@ class HvbGenerator(pl.LightningModule):
     def log_stats(self, outputs: List[Dict[str, torch.Tensor]]):
         # name of the current phase
         phase: str = "train" if self.training is True else "val"
-        # loss
-        losses: torch.Tensor = torch.stack([e["loss"].detach().cpu() for e in outputs])
-        self.log(f"loss_{phase}", losses.mean(), prog_bar=True if phase == "val" else False)
-        # f1
-        f1s: torch.Tensor = torch.stack([e["f1"].detach().cpu() for e in outputs])
-        self.log(f"f1_{phase}", f1s.mean(), prog_bar=True)
-        del losses, f1s
-        gc.collect()
+        # losses
+        self.log(f"loss_nsp_{phase}", torch.stack([e["loss_nsp"].detach().cpu() for e in outputs]).mean(),
+                 prog_bar=True if phase == "val" else False)
+        self.log(f"loss_mlm_{phase}", torch.stack([e["loss_mlm"].detach().cpu() for e in outputs]).mean(),
+                 prog_bar=True if phase == "val" else False)
+        # f1s
+        self.log(f"f1_nsp_{phase}", torch.stack([e["f1_nsp"].detach().cpu() for e in outputs]).mean(),
+                 prog_bar=True)
+        self.log(f"f1_mlm_{phase}", torch.stack([e["f1_mlm"].detach().cpu() for e in outputs]).mean(),
+                 prog_bar=True)
 
     def optimizer_zero_grad(self, epoch, batch_idx, optimizer, optimizer_idx):
         optimizer.zero_grad(set_to_none=True)
@@ -285,23 +325,13 @@ class HvbGenerator(pl.LightningModule):
                                       lr=self.learning_rate)
         return optimizer
 
-    def generate(self):
+    def generate(self, max_length: int = 32):
         tokens = []
-        for _ in range(20):
-            with torch.no_grad():
-                next_token = self(tokens=torch.as_tensor([
-                    self.vocabulary[self.start_token],
-                    *tokens,
-                    self.vocabulary[self.end_token]
-                ], device=self.device).repeat(1, 1))[:, -1]
-                next_token = F.softmax(next_token, dim=-1)
-                next_token = torch.argmax(next_token, dim=-1)
-                next_token = next_token.detach().item()
-                if next_token == self.vocabulary["[SEP]"]:
-                    break
-                tokens += [next_token]
-        tokens = [self.vocabulary_reversed[token_id]
-                  for token_id in tokens]
+        for _ in range(max_length):
+            next_token = self.predict_next_token(previous_tokens=tokens)
+            if next_token == self.end_token:
+                break
+            tokens += [next_token]
         # merges the tokens
         generated_string = ""
         for token in tokens:
@@ -311,6 +341,34 @@ class HvbGenerator(pl.LightningModule):
                 generated_string += f" {token}"
         generated_string = generated_string.strip().capitalize()
         return generated_string
+
+    def predict_next_token(self, previous_tokens: List[str]):
+        previous_tokens = [self.start_token] + previous_tokens
+        with torch.no_grad():
+            tokens = torch.as_tensor([token.ids
+                                      for token in self.tokenizer.encode_batch(previous_tokens)],
+                                     device=self.device)
+
+            # retrieves the embeddings
+            tokens_initial = self.tokens_embedder(tokens)
+            tokens = tokens_initial.clone()
+            tokens = self.add_positional_embeddings_fn(tokens)  # (b, s, d)
+            # encoder pass
+            tokens = self.encoder(tokens)  # (b, s, d)
+            # decoder pass
+            pad_embedding = self.tokens_embedder(torch.as_tensor([self.vocabulary[self.pad_token]],
+                                                                 device=self.device))
+            tokens_initial_shifted = torch.cat([tokens_initial[:, 0:1],
+                                                tokens_initial[:, 2:],
+                                                pad_embedding.repeat(tokens_initial.shape[0], 1, 1)],
+                                               dim=1)
+            tokens_initial_shifted = self.add_positional_embeddings_fn(tokens_initial_shifted)
+            tokens = self.decoder(x_encoder=tokens, x_decoder=tokens_initial_shifted)  # (b, s, d)
+            pred_next_token_id = self.reconstruction(tokens)[0, -1]
+        pred_next_token_id = F.softmax(pred_next_token_id, dim=0)
+        pred_next_token_id = torch.argmax(pred_next_token_id, dim=0).detach().item()
+        pred_next_token = self.classification_bindings[pred_next_token_id]
+        return pred_next_token
 
     def get_tokenizer(self) -> Tokenizer:
         os.environ["TOKENIZERS_PARALLELISM"] = "true"
@@ -323,11 +381,11 @@ class HvbGenerator(pl.LightningModule):
             strip_accents=False,
             lowercase=True,
         )
-        tokenizer.pre_tokenizer = pre_tokenizers.BertPreTokenizer()
+        # tokenizer.pre_tokenizer = pre_tokenizers.BertPreTokenizer()
         tokenizer.decoder = decoders.WordPiece()
-        # self.tokenizer.post_processor = BertProcessing(
-        #     ("[SEP]", self.tokenizer.token_to_id("[SEP]")),
-        #     ("[CLS]", self.tokenizer.token_to_id("[CLS]")),
+        # tokenizer.post_processor = BertProcessing(
+        #     ("[SEP]", tokenizer.token_to_id(self.start_token)),
+        #     ("[CLS]", tokenizer.token_to_id(self.end_token)),
         # )
         return tokenizer
 
@@ -347,9 +405,7 @@ class AddGaussianNoise(nn.Module):
 
 if __name__ == "__main__":
     dataset = RPGObjectDataset(path=join("..", "datasets", "oggetti_magici.csv"),
-                               max_length=32, vocab_path=join("..", "datasets_classes", "vocab.txt"))
-    # squad_train = SQUADDataset(path=join("..", "datasets", "SQuAD_it-train.json"),
-    #                            vocab_path=join("..", "datasets_classes", "vocab.txt"))
+                               max_length=32)
     tokenizer = BertTokenizerFast(join("..", "datasets_classes", "vocab.txt"), lowercase=True)
     tokens = dataset.get_used_tokens(tokenizer=tokenizer)
     vocabulary = {v: i for i, v in enumerate(tokens)}
@@ -363,18 +419,33 @@ if __name__ == "__main__":
                          mask_perc_min=0.1, mask_perc_max=0.3,
                          mix_fourier_with_tokens=True)
     model.training = True
+    shuffled_indices = torch.randperm(len(dataset))
+    objects_dataset_train = NextSentencePredictionDataset(Subset(dataset,
+                                                                 shuffled_indices[:int(len(dataset) * 0.8):]))
+    objects_dataset_val = NextSentencePredictionDataset(Subset(dataset,
+                                                               shuffled_indices[int(len(dataset) * 0.2):]))
     print(model)
     with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:
-        dataloader = DataLoader(dataset, batch_size=8)
-        for b in dataloader:
-            model.training_step(b, 0)
-            print(b)
-            break
+        dataloader_train = DataLoader(objects_dataset_train, batch_size=256, shuffle=True,
+                                      num_workers=os.cpu_count() - 2)
+        dataloader_val = DataLoader(objects_dataset_val, batch_size=256, shuffle=False,
+                                    num_workers=os.cpu_count() - 2)
+        trainer = pl.Trainer(
+            gpus=1 if torch.cuda.is_available() else 0,
+            precision=32,
+            min_epochs=2,
+            max_epochs=2,
+            check_val_every_n_epoch=1,
+            logger=False,
+            log_every_n_steps=1,
+            enable_progress_bar=True,
+            enable_model_summary=True,
+            enable_checkpointing=False,
+            gradient_clip_val=1,
+            auto_lr_find=False,
+        )
+        trainer.fit(model=model, train_dataloaders=dataloader_train, val_dataloaders=dataloader_val)
     print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=8))
 
-    # with profile(activities=[ProfilerActivity.CPU], record_shapes=True, profile_memory=True) as prof:
-    #     dataloader = DataLoader(dataset, batch_size=64)
-    #     model.training_step(next(iter(dataloader)), 0)
-    # print(prof.key_averages(group_by_input_shape=False).table(sort_by="cpu_time", row_limit=8))
     for _ in range(4):
         print(model.generate())

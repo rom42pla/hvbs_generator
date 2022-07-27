@@ -21,10 +21,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from transformers import BertTokenizerFast
 
-from learning.datasets_classes.table_dataset import RPGTableDataset
+from learning.datasets_classes.base_dataset import BaseDataset
 
 
-class RPGObjectDataset(RPGTableDataset):
+class RPGObjectDataset(BaseDataset):
 
     def __init__(
             self,
@@ -38,25 +38,14 @@ class RPGObjectDataset(RPGTableDataset):
         for name, description, rarity in zip(data_df["name"].tolist(),
                                              data_df["description"].tolist(),
                                              data_df["rarity"].tolist()):
-            data += [{
-                "name": name,
-                "description": description,
-                "rarity": rarity,
-            }]
+            data += [
+                description,
+            ]
         # assert all([len(v) == len(data["names"]) for k, v in data.items()])
         return data
-
-    def get_used_tokens(self, tokenizer: BertTokenizerFast) -> List[str]:
-        tokens = set()
-        for item in self.data_raw:
-            for key in item.keys():
-                if isinstance(item[key], str):
-                    tokens = tokens.union(set(tokenizer.tokenize(item[key])))
-        return list(tokens)
 
 
 if __name__ == "__main__":
     dataset = RPGObjectDataset(path=join("..", "datasets", "oggetti_magici.csv"))
     x = dataset[0]
-    dataloader = DataLoader(dataset, batch_size=64)
-    print(dataset.tokenizer.pad_token)
+    pprint(x)
