@@ -1,18 +1,6 @@
 pandas
-fastapi
-uvicorn[standard]
 aiogram
 
 # learning
-numpy
-scipy
 torch
-nltk
-functorch
-pytorch-lightning
-torchmetrics
 transformers
-einops
-matplotlib
-seaborn
-rich
